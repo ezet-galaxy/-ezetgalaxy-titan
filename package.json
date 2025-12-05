@@ -1,0 +1,50 @@
+{
+  "name": "@ezetgalaxy/titan",
+  "version": "25.11.0",
+  "description": "JavaScript backend framework that compiles your JS into a Rust + Axum server.",
+  "license": "ISC",
+  "author": "ezetgalaxy",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "tit": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "scripts/",
+    "templates/",
+    "README.md"
+  ],
+  "keywords": [
+    "titan",
+    "titanjs",
+    "ezetgalaxy",
+    "framework",
+    "javascript",
+    "nodejs",
+    "backend",
+    "web-framework",
+    "api-framework",
+    "rust",
+    "rust-backend",
+    "axum",
+    "boa",
+    "js-to-rust",
+    "server",
+    "high-performance",
+    "native-performance",
+    "microservices",
+    "cli",
+    "esbuild",
+    "modern-backend",
+    "edge-computing",
+    "super-backend"
+  ],
+  "scripts": {
+    "build": "echo \"No build step\"",
+    "test": "echo \"No tests specified\""
+  },
+  "dependencies": {
+    "esbuild": "^0.27.1"
+  }
+}
