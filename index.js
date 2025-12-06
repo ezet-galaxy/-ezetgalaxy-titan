@@ -218,7 +218,6 @@ function updateTitan() {
     console.log(green(`✔ Backup created → ${backupDir}`));
 
     copyDir(cliTitan, projectTitan);
-    copyDir(templateDir, target);
 
     [".gitignore", ".dockerignore", "Dockerfile"].forEach((file) => {
         const src = path.join(templateDir, file);
