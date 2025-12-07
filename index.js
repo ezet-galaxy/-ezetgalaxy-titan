@@ -221,7 +221,9 @@ function startProd() {
 function updateTitan() {
     const projectRoot = process.cwd();
     const projectTitan = path.join(projectRoot, "titan");
-    const cliTitan = path.join(__dirname, "templates", "titan");
+
+    const cliTemplatesRoot = path.join(__dirname, "templates");
+    const cliTitan = path.join(cliTemplatesRoot, "titan");
 
     if (!fs.existsSync(projectTitan)) {
         console.log(red("No titan/ folder found in this project."));
@@ -229,18 +231,41 @@ function updateTitan() {
         return;
     }
 
-    console.log(cyan("Titan: Updating runtime files..."));
 
-    const backupDir = path.join(projectRoot, `titan_backup_${Date.now()}`);
-    fs.renameSync(projectTitan, backupDir);
-    console.log(green(`✔ Backup created → ${backupDir}`));
+    //
+    // 2. Replace titan/ runtime folder
+    //
+    fs.rmSync(projectTitan, { recursive: true, force: true });
+    console.log(green("✔ Old titan/ runtime removed"));
 
     copyDir(cliTitan, projectTitan);
+    console.log(green("✔ titan/ runtime updated"));
 
-    const projectTemplateRoot = path.join(__dirname, "templates");
+    //
+    // 3. Update server/Cargo.toml
+    //
+    const srcToml = path.join(cliTemplatesRoot, "server", "Cargo.toml");
+    const destToml = path.join(projectRoot, "server", "Cargo.toml");
+    if (fs.existsSync(srcToml)) {
+        fs.copyFileSync(srcToml, destToml);
+        console.log(green("✔ Updated server/Cargo.toml"));
+    }
 
+    //
+    // 4. Update ONLY server/src/main.rs
+    //
+    const srcMain = path.join(cliTemplatesRoot, "server", "src", "main.rs");
+    const destMain = path.join(projectRoot, "server", "src", "main.rs");
+    if (fs.existsSync(srcMain)) {
+        fs.copyFileSync(srcMain, destMain);
+        console.log(green("✔ Updated server/src/main.rs"));
+    }
+
+    //
+    // 5. Update root-level config files
+    //
     [".gitignore", ".dockerignore", "Dockerfile"].forEach((file) => {
-        const src = path.join(projectTemplateRoot, file);
+        const src = path.join(cliTemplatesRoot, file);
         const dest = path.join(projectRoot, file);
 
         if (fs.existsSync(src)) {
@@ -249,9 +274,11 @@ function updateTitan() {
         }
     });
 
-    console.log(green("✔ Titan runtime updated successfully!"));
-    console.log(cyan("Your project now has the latest Titan features."));
+    console.log(cyan("✔ Titan forced update complete"));
 }
+
+
+
 
 
 
