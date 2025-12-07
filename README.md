@@ -1,42 +1,53 @@
-# TITAN PLANET 🚀
 
-JavaScript Simplicity. Rust Power.
-
-Titan is a JavaScript-first backend framework that compiles your JavaScript routes and actions into a production-grade **Rust + Axum native server**.
-
-Developers write **zero Rust**, yet deploy a high-performance, safe, fully native backend with modern DX.
-
-Titan = Rust performance × JavaScript simplicity
-
----
-
-# 🐳 Production Docker Support (Pre-built by Titan CLI)
-
-Titan provides **first-class Docker support automatically**.
-
-When you create a project with:
-
-```bash
-tit init my-app
+```
+████████╗██╗████████╗ █████╗ ███╗   ██╗
+╚══██╔══╝██║╚══██╔══╝██╔══██╗████╗  ██║
+   ██║   ██║   ██║   ███████║██╔██╗ ██║
+   ██║   ██║   ██║   ██╔══██║██║╚██╗██║
+   ██║   ██║   ██║   ██║  ██║██║ ╚████║
+   ╚═╝   ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝
 ```
 
-Titan generates:
+# TITAN PLANET 🚀
 
-* A **pre-configured Dockerfile** (production-ready)
-* A **pre-configured .dockerignore**
-* A **Git-ready .gitignore**
-* A **safe, no-spaces directory structure** ideal for cloud builds
+**JavaScript Simplicity. Rust Power. Zero Configuration.**
 
-You do **not** need to modify the Dockerfile. It is optimized for:
+Titan Planet is a JavaScript-first backend framework that compiles your JavaScript routes and actions into a **native Rust + Axum server**.
 
-* Native Rust builds
-* Fast multi-stage compilation
-* Minimal final image size
-* Railway, Fly.io, Render, Docker Hub, VPS deployments
+You write **zero Rust**.
+Titan ships a full backend engine, dev server, bundler, router, action runtime, and Docker deploy pipeline — all powered by Rust under the hood.
 
-This ensures **zero-config deployment** anywhere.
+Titan = JavaScript productivity × Rust performance × Zero DevOps.
 
 ---
+
+# 🌌 Why Titan?
+
+| Feature                              | Titan | Express/Nest | FastAPI | Bun       |
+| ------------------------------------ | ----- | ------------ | ------- | --------- |
+| Native binary output                 | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
+| Rust-level performance               | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
+| Pure JavaScript developer experience | ✅ Yes | ✅ Yes        | ❌ No    | ❌ Partial |
+| Zero-config Docker deploy            | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
+| Action-based architecture            | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
+| Hot reload dev server                | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
+
+Titan gives you:
+
+* Native speed
+* JS comfort
+* Cloud-first deployment
+* Full environment variable support
+* Built-in HTTP client (`t.fetch`)
+* Lightweight serverless-like actions
+* Instant hot reload
+* Zero configuration
+* Single deployable binary
+
+---
+
+# 🚀 Quick Start
+
 
 # ⚙ Requirements
 
@@ -64,69 +75,13 @@ rustc -V
 
 ---
 
-# 🔄 Updating Titan CLI
-
-Titan ships with a built-in updater.
-To upgrade to the latest CLI, features, and patches:
-
-```bash
-tit update
-```
-
-This updates:
-
-* Titan CLI
-* DSL components
-* Bundler + Dev server
-* Rust server templates
-* Dockerfile (if version bump requires)
-
-Backwards compatibility is maintained automatically.
-
----
-
-# ✨ Features
-
-Here is the updated **Features** block with your new environment-variable feature added cleanly and professionally, matching the style of your documentation.
-
-You can copy–paste it directly into the README.
-
----
-
-# ✨ Features
-
-* Write backend logic in **pure JavaScript**
-* Compile into a **native Rust Axum server**
-* Titan DSL: `t.get()`, `t.post()`, `t.start()`
-* Automatic **route generation**
-* Automatic **JS action bundling**
-* High-performance **Rust Axum runtime**
-* JavaScript execution via **Boa engine**
-* Full **Hot Reload Dev Server**
-* **Single binary** production output
-* Zero-config deployment
-* Built-in **environment variable support** — create a `.env` file in the project root and access values directly via `process.env.KEY_NAME` inside your Titan actions and app logic
-
-With `.env` support, Titan loads environment variables automatically during:
-
-* `tit dev`
-* `tit build`
-* Production runtime inside the Rust server
-
-No additional configuration is required.
-
-
----
-
-# 📦 Installation
+### Install Titan CLI
 
 ```bash
 npm install -g @ezetgalaxy/titan
 ```
 
----
-
-# 🚀 Create a New Titan Project
+### Create a new project
 
 ```bash
 tit init my-app
@@ -136,14 +91,15 @@ tit dev
 
 Titan will:
 
-* Create the project structure
-* Generate routing metadata
-* Bundle JS actions
-* Start the Rust dev server with hot reload
+* Build routes
+* Bundle actions
+* Start Rust dev server
+* Watch file changes
+* Trigger instant reload
 
 ---
 
-# 📁 Project Structure
+# 📁 Project Layout
 
 ```
 my-app/
@@ -180,12 +136,27 @@ my-app/
 
 ---
 
-# 🧩 Example: Titan Action
+# 🛣 Example Route
+
+**app/app.js**
+
+```js
+import t from "../titan/titan.js";
+
+t.post("/hello").action("hello");
+t.get("/").reply("Welcome to Titan Planet");
+
+t.start(3000, "Ready to land on Titan 🚀");
+```
+
+---
+
+# 🧩 Example Action
 
 **app/actions/hello.js**
 
 ```js
-function hello(req) {
+export function hello(req) {
   return { message: "Hello from Titan!" };
 }
 
@@ -194,57 +165,96 @@ globalThis.hello = hello;
 
 ---
 
-# 🛣 Example: Routes (Titan DSL)
+# ⚡ New: Built-In HTTP Fetch (`t.fetch`)
 
-**app/app.js**
+Titan now includes a built-in server-side `fetch` bridge powered by Rust.
+
+Use it to call any external API:
 
 ```js
-import t from "../titan/titan.js";
+export function hello(req) {
+    const body = JSON.stringify({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: "hii" }]
+    });
 
-t.post("/hello").action("hello");
-t.get("/").reply("Welcome to Titan");
+    const r = t.fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        body
+    });
 
-t.start(3000, "Ready to land on Titan Planet 🚀");
+    const json = JSON.parse(r.body);
+
+    return {
+        ok: true,
+        message: json.choices[0].message.content
+    };
+}
+
+globalThis.hello = hello;
 ```
+
+### `t.fetch` supports:
+
+* GET, POST, PUT, DELETE
+* Custom headers
+* JSON bodies
+* Authorization tokens
+* External / internal APIs
 
 ---
 
-# 🔥 Hot Reload Dev Mode
+# 🔥 Hot Reload Dev Server
 
 ```bash
 tit dev
 ```
 
-Titan Dev Mode:
+Titan’s dev engine:
 
-* Rebuilds routes automatically
-* Rebundles actions
-* Restarts Rust server safely
-* Provides instant backend hot reload
+* Rebuilds routes
+* Rebundi actions
+* Restarts Rust server
+* Updates instantly
 
-Flow:
-
-```
-Save → Rebuild → Restart → Updated API
-```
 
 ---
 
-# 🏭 Production Build
+# 🧱 Production Build
 
 ```bash
 tit build
 ```
 
-Production output:
+Output includes:
 
+* `titan-server` native binary
+* JS bundles
+* routing metadata
+
+---
+
+# 🐳 Docker Deployment (Zero Config)
+
+Titan generates an optimized **multi-stage Dockerfile**:
+
+```bash
+docker build -t titan-app .
+docker run -p 3000:3000 titan-app
 ```
-server/
-  titan-server
-  routes.json
-  action_map.json
-  actions/*.jsbundle
-```
+
+Works on:
+
+* Railway
+* Fly.io
+* Render
+* VPS / Dedicated servers
+* Docker Hub
+* Kubernetes
 
 ---
 
@@ -302,79 +312,32 @@ No configuration required.
 
 ---
 
-# 🧠 Internal Architecture
+# ✨ Updating Titan
 
-### 1. Titan DSL
+```bash
+tit update
+```
 
-Simple JavaScript syntax for writing routes and actions.
+Updates:
 
-### 2. Bundler (esbuild)
-
-Compiles actions into `.jsbundle` format.
-
-### 3. Metadata
-
-`t.start()` generates:
-
-* `routes.json`
-* `action_map.json`
-
-### 4. Rust Server
-
-Axum-based runtime:
-
-* Loads JS bundles
-* Injects request objects
-* Executes JS via Boa
-* Returns JSON
-
-### 5. Production Output
-
-Titan emits:
-
-* Native Rust binary
-* JS bundles
-* Routing metadata
-* Fully deployable directory
+* Titan CLI
+* DSL
+* Bundler
+* Dev server
+* Rust runtime templates
+* Dockerfile
 
 ---
 
-# 🎯 Why Titan Exists
-
-Titan is for developers who want:
-
-* Rust performance
-* JavaScript simplicity
-* Zero Rust learning curve
-* Modern DX
-* Fast deployment
-* Native backend speed
-
-Titan merges two worlds:
-
-JavaScript productivity × Rust performance.
-
----
-
-# 📌 Version
+# 📦 Version
 
 **Titan v1 — Stable**
-
-Includes:
-
-* JS → Rust compiler
-* Action Engine
-* Axum Runtime
-* Titan DSL
-* Hot Reload Dev Server
-* Docker Deployments
-* Railway/Fly.io Support
-* `tit update` CLI Upgrader
+Optimized for production, cloud deployment, and AI workloads.
 
 ---
 
 # 🤝 Contributing
 
-Issues, discussions, and pull requests are welcome.
+Pull requests welcome.
 
 ---
