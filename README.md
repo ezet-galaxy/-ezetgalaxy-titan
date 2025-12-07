@@ -217,7 +217,7 @@ tit dev
 Titan’s dev engine:
 
 * Rebuilds routes
-* Rebundi actions
+* Rebundil actions
 * Restarts Rust server
 * Updates instantly
 
@@ -241,11 +241,6 @@ Output includes:
 # 🐳 Docker Deployment (Zero Config)
 
 Titan generates an optimized **multi-stage Dockerfile**:
-
-```bash
-docker build -t titan-app .
-docker run -p 3000:3000 titan-app
-```
 
 Works on:
 
@@ -331,13 +326,14 @@ Updates:
 
 # 📦 Version
 
-**Titan v1 — Stable**
+**Titan v25 — Stable**
 Optimized for production, cloud deployment, and AI workloads.
 
 ---
 
 # 🤝 Contributing
 
-Pull requests welcome.
+Pull requests welcome
+https://github.com/ezet-galaxy/-ezetgalaxy-titan
 
 ---

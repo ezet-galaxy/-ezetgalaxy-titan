@@ -1,40 +1,59 @@
-# Stage 1 — Build Titan (JS → Rust)
+# ================================================================
+# STAGE 1 — Build Titan (JS → Rust)
+# ================================================================
 FROM rust:1.91.1 AS builder
 
-# Install Node for Titan CLI
+# Install Node for Titan CLI and bundler
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
 
-# Install Titan CLI AND its required dependencies
+# Install Titan CLI globally
 RUN npm install -g @ezetgalaxy/titan
 
 WORKDIR /app
 
-# Copy project
+# Copy project files into container
 COPY . .
 
-# Install Titan dependencies LOCALLY
+# Install JS dependencies (for bundler & DSL)
 RUN npm install
 
-# Build Titan metadata (routes + bundles)
+# Build Titan metadata (routes.json + actions/*.jsbundle)
 RUN tit build
 
-# Build Rust release binary
+# Build the Rust backend (release mode)
 RUN cd server && cargo build --release
 
-# Stage 2 — Run Titan server
+
+
+# ================================================================
+# STAGE 2 — Runtime Image 
+# ================================================================
 FROM debian:stable-slim
 
 WORKDIR /app
 
-# Copy final Rust binary
+# -------------------------------------------------------------
+# Copy the Rust binary
+# -------------------------------------------------------------
 COPY --from=builder /app/server/target/release/server ./titan-server
 
-# Copy Titan runtime files
-COPY --from=builder /app/server/routes.json .
-COPY --from=builder /app/server/action_map.json .
-COPY --from=builder /app/server/actions ./actions
+# -------------------------------------------------------------
+# Copy Titan routing metadata (REQUIRED)
+# -------------------------------------------------------------
+COPY --from=builder /app/server/routes.json ./routes.json
+COPY --from=builder /app/server/action_map.json ./action_map.json
 
+# -------------------------------------------------------------
+# Copy Titan JS bundles directory (REQUIRED)
+# -------------------------------------------------------------
+RUN mkdir -p /app/actions
+COPY --from=builder /app/server/actions /app/actions
+
+
+# -------------------------------------------------------------
+# Runtime configuration
+# -------------------------------------------------------------
 EXPOSE 3000
 
 CMD ["./titan-server"]
