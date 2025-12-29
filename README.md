@@ -13,6 +13,7 @@
 ✅ **Production mode is ready**
 💙 **Enjoy development mode `tit dev`**
 ✅ **No more `globalThis` required**
+💟 **Website for titan docs: https://titan-docs-ez.vercel.app/docs**
 
 
 ---
@@ -259,15 +260,3 @@ No exports wiring. No globals. No boilerplate.
 * Native Rust performance
 * Designed for cloud & AI workloads
 
----
-
-# 🧠 Final Note
-
-What you built today is **not a wrapper**, **not a toy**, and **not a clone**.
-
-You now have:
-
-* A real JS runtime
-* A real routing engine
-* A real compiler pipeline
-* A real production server
