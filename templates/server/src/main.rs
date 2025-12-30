@@ -183,16 +183,28 @@ fn inject_t_runtime(ctx: &mut Context, action_name: &str) {
     // t.fetch(...) — no capture, safe fn pointer
     // =========================================================
     let t_fetch_native = NativeFunction::from_fn_ptr(|_this, args, ctx| {
-        let url = args
-            .get(0)
-            .and_then(|v| v.to_string(ctx).ok())
-            .map(|s| s.to_std_string_escaped())
-            .unwrap_or_default();
+        // -----------------------------
+        // 1. URL (required)
+        // -----------------------------
+        let url = match args.get(0) {
+            Some(v) => v.to_string(ctx)?.to_std_string_escaped(),
+            None => {
+                return Err(JsError::from_native(
+                    boa_engine::JsNativeError::typ()
+                        .with_message("t.fetch(url[, options]): url is required"),
+                ));
+            }
+        };
 
-        let opts_js = args.get(1).cloned().unwrap_or(JsValue::undefined());
-        let opts_json: Value = opts_js
-            .to_json(ctx)
-            .unwrap_or(Value::Object(serde_json::Map::new()));
+        // -----------------------------
+        // 2. Options (optional, JSON-only)
+        // -----------------------------
+        let opts_js = args.get(1).cloned().unwrap_or(JsValue::Null);
+
+        let opts_json = match opts_js.to_json(ctx) {
+            Ok(v) => v,
+            Err(_) => Value::Object(serde_json::Map::new()),
+        };
 
         let method = opts_json
             .get("method")
@@ -200,28 +212,35 @@ fn inject_t_runtime(ctx: &mut Context, action_name: &str) {
             .unwrap_or("GET")
             .to_string();
 
-        let body_opt = opts_json.get("body").map(|v| v.to_string());
+        let body_opt = opts_json
+            .get("body")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let mut header_pairs = Vec::new();
         if let Some(Value::Object(map)) = opts_json.get("headers") {
             for (k, v) in map {
-                header_pairs.push((k.clone(), v.to_string()));
+                if let Some(val) = v.as_str() {
+                    header_pairs.push((k.clone(), val.to_string()));
+                }
             }
         }
 
+        // -----------------------------
+        // 3. Blocking HTTP (safe fallback)
+        // -----------------------------
         let out_json = task::block_in_place(move || {
             let client = Client::new();
-            let mut req = client.request(
-                method.parse().unwrap_or(reqwest::Method::GET),
-                &url,
-            );
+
+            let mut req = client.request(method.parse().unwrap_or(reqwest::Method::GET), &url);
 
             if !header_pairs.is_empty() {
                 let mut headers = HeaderMap::new();
                 for (k, v) in header_pairs {
-                    if let (Ok(name), Ok(val)) =
-                        (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(&v))
-                    {
+                    if let (Ok(name), Ok(val)) = (
+                        HeaderName::from_bytes(k.as_bytes()),
+                        HeaderValue::from_str(&v),
+                    ) {
                         headers.insert(name, val);
                     }
                 }
@@ -245,7 +264,15 @@ fn inject_t_runtime(ctx: &mut Context, action_name: &str) {
             }
         });
 
-        Ok(JsValue::from_json(&out_json, ctx).unwrap_or(JsValue::undefined()))
+        // -----------------------------
+        // 4. JSON → JsValue (NO undefined fallback)
+        // -----------------------------
+        match JsValue::from_json(&out_json, ctx) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(boa_engine::JsNativeError::error()
+                .with_message(format!("t.fetch: JSON conversion failed: {}", e))
+                .into()),
+        }
     });
 
     // =========================================================
