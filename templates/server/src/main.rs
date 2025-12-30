@@ -1,6 +1,6 @@
 // server/src/main.rs
 use std::{collections::HashMap, env, fs, path::PathBuf, sync::Arc, path::Path};
-
+use boa_engine::JsError;
 use anyhow::Result;
 use axum::{
     body::{to_bytes, Body},

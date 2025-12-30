@@ -19,7 +19,7 @@ COPY . .
 RUN npm install
 
 # Build Titan metadata + bundle JS actions
-RUN tit build
+RUN titan build
 
 # Build Rust binary
 RUN cd server && cargo build --release
