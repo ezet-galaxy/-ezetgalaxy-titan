@@ -314,17 +314,7 @@ pub fn inject_t_runtime(ctx: &mut Context, action_name: &str, project_root: &Pat
                 )
             })?;
 
-        // CREATE A QUERY FUNCTION bound to this URL
-        // We do connection-per-query here for simplicity within the restricted environment
-        // OR we can create a closure, but we are inside a fn_ptr.
-        // To use closure capturing, we would need to use `NativeFunction::from_closure_with_captures` or similiar,
-        // but `from_closure` is enough if we build the object inside it.
-        // Wait, `from_fn_ptr` cannot capture. We need `from_closure` if we want to capture,
-        // BUT we are creating a JS object *inside* this function to return.
-
-        // The returned JS object: { query: (sql, params) => ... }
-        // The `query` function itself needs to know the URL.
-        // So `query` must be a closure that captures `url`.
+       
         
         let url_clone = url.clone();
         
@@ -339,46 +329,10 @@ pub fn inject_t_runtime(ctx: &mut Context, action_name: &str, project_root: &Pat
                         )
                     })?;
 
-                // Params
-
-                // Actually rust-postgres execution with `client.query` requires `&[&(dyn ToSql + Sync)]`.
-                // Converting unknown JS values to ToSql is hard.
-                // We likely need to support basic types: String, i32, bool.
-                // But params need to be owned or lifetime managed. 
-                // This is complex in Rust. An alternative:
-                // Use simple text interpolation? NO, SQL injection.
                 
-                // Rust-postgres requires params to be referenceable distinct types.
-                // Since we don't know types, we might default everything to String? Or try to guess.
-                // A common workaround for generic JSON->Postgres is tricky.
-                // Let's support: Strings, Numbers (as f64 or i64), Booleans, Null.
-                
-                // NOTE: We cannot easily construct `&[&dyn ToSql]` from a dynamic `Vec<Type>`.
-                // We'd need a wrapper enum that implements ToSql.
-                
-                // Let's assume we handle primitive params only for now by stringifying them? No.
-                // Postgres won't like string for int column.
-                
-                // Implementation Shortcut:
-                // For MVP, if we can't easily map types, we use simple query text or we try hard.
-                // Or we accept that params are just strings? No.
-                
-                // Let's assume we can build a `Vec<Box<dyn ToSql>>`?
-                // `Box<dyn ToSql` is object safe? `ToSql` trait is.
-                // `client.query(sql, &[&p1, &p2])`.
-                
-                // Let's look at params from JS:
                 let params_val = args.get(1).cloned().unwrap_or(JsValue::Null);
                 
-                // Collect params into a structure we can iterate and borrow as ToSql
-                // We'll define a wrapper enum inside here or use `serde_json::Value` (postgres-types has serde_json support!)
-                // If we enabled `with-serde_json-1` feature (we did via defaults maybe?), we can pass `serde_json::Value`.
-                // Checking `postgres` output earlier: `with-serde_json-1` was ENABLED.
-                // So we can convert JS values to `serde_json::Value` and pass them?
-                // BUT postgres expects specific SQL types usually. Passing JSON value to an integer column might fail
-                // unless we use `ToSql` wrappers.
-                
-                // Let's convert JS args to `serde_json::Value`.
+               
                 let json_params: Vec<Value> = if let Ok(val) = params_val.to_json(ctx) {
                    if let Value::Array(arr) = val { arr } else { vec![] }
                 } else {
