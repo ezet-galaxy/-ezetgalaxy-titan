@@ -44,6 +44,9 @@ COPY --from=builder /app/server/action_map.json ./action_map.json
 RUN mkdir -p /app/actions
 COPY --from=builder /app/server/actions /app/actions
 
+# Copy static assets for t.read
+COPY app/db /app/assets/db
+
 # Expose Titan port
 EXPOSE 3000
 
