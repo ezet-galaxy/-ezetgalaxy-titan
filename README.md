@@ -239,16 +239,22 @@ Example runtime log:
 
 ---
 
-### 🧱 Architecture Guarantees
+---
 
-* No runtime reflection
-* No Node.js in production
-* No framework lock-in
-* No magic globals
-* No config files
-* No Rust knowledge required
+### 🧩 Titan Extensions & Test Harness
+
+Titan Planet isn't just a framework; it's an extensible platform. You can build custom extensions to add new native capabilities to the `t` runtime.
+
+*   **`titan create ext <name>`**: Scaffold a new Titan Extension template (supports JS and Native Rust modules).
+*   **`titan run ext`**: Launch the **Titan Test Harness**. This provides a "lite" Titan runtime environment that automatically:
+    *   Builds your native Rust code.
+    *   Links your extension to a temporary project.
+    *   Generates a test suite to verify your extension's methods.
+    *   Starts a live server to test extension logic in a real-world scenario.
 
 ---
+
+### 🧱 Architecture Guarantees
 
 # 🧩 Example Action (Updated – No `globalThis` Needed)
 
