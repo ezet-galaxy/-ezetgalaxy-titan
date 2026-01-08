@@ -2,6 +2,7 @@ import chokidar from "chokidar";
 import { spawn, execSync } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 import { bundle } from "./bundle.js";
 
 // Required for __dirname in ES modules
@@ -17,8 +18,6 @@ async function killServer() {
     const killPromise = new Promise((resolve) => {
         if (serverProcess.exitCode !== null) return resolve();
         serverProcess.once("close", resolve);
-        // Fallback timeout in case close never fires? 
-        // usually close fires after kill.
     });
 
     if (process.platform === "win32") {
@@ -68,6 +67,10 @@ async function rebuild() {
 async function startDev() {
     console.log("[Titan] Dev mode starting...");
 
+    if (fs.existsSync(path.join(process.cwd(), ".env"))) {
+        console.log("\x1b[33m[Titan] Env Configured\x1b[0m");
+    }
+
     // FIRST BUILD
     try {
         await rebuild();
@@ -76,7 +79,7 @@ async function startDev() {
         console.log("\x1b[31m[Titan] Initial build failed. Waiting for changes...\x1b[0m");
     }
 
-    const watcher = chokidar.watch("app", {
+    const watcher = chokidar.watch(["app", ".env"], {
         ignoreInitial: true
     });
 
@@ -86,7 +89,11 @@ async function startDev() {
         if (timer) clearTimeout(timer);
 
         timer = setTimeout(async () => {
-            console.log(`[Titan] Change detected: ${file}`);
+            if (file.includes(".env")) {
+                console.log("\x1b[33m[Titan] Env Refreshed\x1b[0m");
+            } else {
+                console.log(`[Titan] Change detected: ${file}`);
+            }
 
             try {
                 await rebuild();

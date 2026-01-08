@@ -1,3 +1,4 @@
+#![allow(unused)]
 use v8;
 use reqwest::{
     blocking::Client,
@@ -10,7 +11,142 @@ use serde_json::Value;
 use jsonwebtoken::{encode, decode, Header, EncodingKey, DecodingKey, Validation};
 use bcrypt::{hash, verify, DEFAULT_COST};
 
-use crate::utils::{blue, gray, parse_expires_in};
+use crate::utils::{blue, gray, green, parse_expires_in};
+use libloading::{Library};
+use walkdir::WalkDir;
+use std::sync::Mutex;
+use std::collections::HashMap;
+use std::fs;
+
+// ----------------------------------------------------------------------------
+// GLOBAL REGISTRY
+// ----------------------------------------------------------------------------
+
+static REGISTRY: Mutex<Option<Registry>> = Mutex::new(None);
+#[allow(dead_code)]
+struct Registry {
+    _libs: Vec<Library>, 
+    modules: Vec<ModuleDef>,
+    natives: Vec<NativeFnEntry>, // Flattened list of all native functions
+}
+
+#[derive(Clone)]
+struct ModuleDef {
+    name: String,
+    js: String,
+    native_indices: HashMap<String, usize>, // Function Name -> Index in REGISTRY.natives
+}
+
+struct NativeFnEntry {
+    ptr: usize,
+    sig: Signature,
+}
+
+#[derive(Clone, Copy)]
+enum Signature {
+    F64TwoArgsRetF64,
+    Unknown,
+}
+
+#[derive(serde::Deserialize)]
+struct TitanConfig {
+    name: String,
+    main: String,
+    native: Option<TitanNativeConfig>,
+}
+#[derive(serde::Deserialize)]
+struct TitanNativeConfig {
+    path: String,
+    functions: HashMap<String, TitanNativeFunc>,
+}
+#[derive(serde::Deserialize)]
+struct TitanNativeFunc {
+    symbol: String,
+    #[serde(default)]
+    parameters: Vec<String>,
+    #[serde(default)]
+    result: String,
+}
+
+pub fn load_project_extensions(root: PathBuf) {
+    let mut modules = Vec::new();
+    let mut libs = Vec::new();
+    let mut all_natives = Vec::new();
+
+    let mut node_modules = root.join("node_modules");
+    if !node_modules.exists() {
+        if let Some(parent) = root.parent() {
+            let parent_modules = parent.join("node_modules");
+            if parent_modules.exists() {
+                node_modules = parent_modules;
+            }
+        }
+    }
+    
+    if node_modules.exists() {
+        for entry in WalkDir::new(&node_modules).min_depth(1).max_depth(2) {
+            let entry = match entry { Ok(e) => e, Err(_) => continue };
+            if entry.file_type().is_file() && entry.file_name() == "titan.json" {
+                let dir = entry.path().parent().unwrap();
+                let config_content = match fs::read_to_string(entry.path()) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                let config: TitanConfig = match serde_json::from_str(&config_content) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let mut mod_natives_map = HashMap::new();
+                
+                if let Some(native_conf) = config.native {
+                     let lib_path = dir.join(&native_conf.path);
+                     unsafe {
+                         match Library::new(&lib_path) {
+                             Ok(lib) => {
+                                 for (fn_name, fn_conf) in native_conf.functions {
+                                     let sig = if fn_conf.parameters.len() == 2 
+                                        && fn_conf.parameters[0] == "f64" 
+                                        && fn_conf.parameters[1] == "f64"
+                                        && fn_conf.result == "f64" {
+                                            Signature::F64TwoArgsRetF64
+                                     } else {
+                                            Signature::Unknown
+                                     };
+                                     
+                                     if let Ok(symbol) = lib.get::<*const ()>(fn_conf.symbol.as_bytes()) {
+                                          let idx = all_natives.len();
+                                          all_natives.push(NativeFnEntry {
+                                              ptr: *symbol as usize,
+                                              sig
+                                          });
+                                          mod_natives_map.insert(fn_name, idx);
+                                     }
+                                 }
+                                 libs.push(lib);
+                             },
+                             Err(e) => println!("Failed to load extension library {}: {}", lib_path.display(), e),
+                         }
+                     }
+                }
+
+                let js_path = dir.join(&config.main);
+                let js_content = fs::read_to_string(js_path).unwrap_or_default();
+
+                modules.push(ModuleDef {
+                    name: config.name.clone(),
+                    js: js_content,
+                    native_indices: mod_natives_map,
+                });
+                
+                println!("{} {} {}", blue("[Titan]"), green("Extension loaded:"), config.name);
+            }
+        }
+    }
+
+    *REGISTRY.lock().unwrap() = Some(Registry { _libs: libs, modules, natives: all_natives });
+}
+
 
 static V8_INIT: Once = Once::new();
 
@@ -317,11 +453,62 @@ fn native_define_action(_scope: &mut v8::HandleScope, args: v8::FunctionCallback
 }
 
 // ----------------------------------------------------------------------------
+// NATIVE CALLBACKS (EXTENSIONS)
+// ----------------------------------------------------------------------------
+
+// generic wrappers could go here if needed
+
+fn native_invoke_extension(scope: &mut v8::HandleScope, args: v8::FunctionCallbackArguments, mut retval: v8::ReturnValue) {
+    let fn_idx = args.get(0).to_integer(scope).unwrap().value() as usize;
+
+    // Get pointer from registry
+    let mut ptr = 0;
+    let mut sig = Signature::Unknown;
+    
+    if let Ok(guard) = REGISTRY.lock() {
+        if let Some(registry) = &*guard {
+            if let Some(entry) = registry.natives.get(fn_idx) {
+                ptr = entry.ptr;
+                sig = entry.sig;
+            }
+        }
+    }
+    
+    if ptr == 0 {
+         throw(scope, "Native function not found");
+         return;
+    }
+
+    match sig {
+        Signature::F64TwoArgsRetF64 => {
+             let a = args.get(1).to_number(scope).unwrap_or(v8::Number::new(scope, 0.0)).value();
+             let b = args.get(2).to_number(scope).unwrap_or(v8::Number::new(scope, 0.0)).value();
+             
+             unsafe {
+                 let func: extern "C" fn(f64, f64) -> f64 = std::mem::transmute(ptr);
+                 let res = func(a, b);
+                 retval.set(v8::Number::new(scope, res).into());
+             }
+        },
+        _ => throw(scope, "Unsupported signature"),
+    }
+}
+
+
+// ----------------------------------------------------------------------------
 // INJECTOR
 // ----------------------------------------------------------------------------
 
+
 pub fn inject_extensions(scope: &mut v8::HandleScope, global: v8::Local<v8::Object>) {
+    // Ensure globalThis reference
+    let gt_key = v8_str(scope, "globalThis");
+    global.set(scope, gt_key.into(), global.into());
+
     let t_obj = v8::Object::new(scope);
+    let t_key = v8_str(scope, "t");
+    // Use create_data_property to guarantee definition
+    global.create_data_property(scope, t_key.into(), t_obj.into()).unwrap();
 
     // defineAction (identity function for clean typing)
     let def_fn = v8::Function::new(scope, native_define_action).unwrap();
@@ -368,6 +555,80 @@ pub fn inject_extensions(scope: &mut v8::HandleScope, global: v8::Local<v8::Obje
     
     let pw_key = v8_str(scope, "password");
     t_obj.set(scope, pw_key.into(), pw_obj.into());
+
+
+    // Inject __titan_invoke_native
+    let invoke_fn = v8::Function::new(scope, native_invoke_extension).unwrap();
+    let invoke_key = v8_str(scope, "__titan_invoke_native");
+    global.set(scope, invoke_key.into(), invoke_fn.into());
+
+    // Inject Loaded Extensions
+    let modules = if let Ok(guard) = REGISTRY.lock() {
+        if let Some(registry) = &*guard {
+            registry.modules.clone()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    for module in modules {
+         let mod_obj = v8::Object::new(scope);
+         
+         // Generate JS wrappers
+         for (fn_name, &idx) in &module.native_indices {
+              let code = format!("(function(a, b) {{ return __titan_invoke_native({}, a, b); }})", idx);
+              let source = v8_str(scope, &code);
+              if let Some(script) = v8::Script::compile(scope, source, None) {
+                  if let Some(val) = script.run(scope) {
+                       let key = v8_str(scope, fn_name);
+                       mod_obj.set(scope, key.into(), val);
+                  }
+              }
+         }
+         
+         // Inject t.<module_name>
+         let mod_key = v8_str(scope, &module.name);
+         t_obj.set(scope, mod_key.into(), mod_obj.into());
+
+         // Set context for logging
+         let action_key = v8_str(scope, "__titan_action");
+         let action_val = v8_str(scope, &module.name);
+         global.set(scope, action_key.into(), action_val.into());
+         
+         // Execute JS
+         // Wrap in IIFE passing 't' to ensure visibility
+         let wrapped_js = format!("(function(t) {{ {} }})", module.js);
+         let source = v8_str(scope, &wrapped_js);
+         let tc = &mut v8::TryCatch::new(scope);
+         
+         if let Some(script) = v8::Script::compile(tc, source, None) {
+             if let Some(func_val) = script.run(tc) {
+                 // func_val is the function. Call it with [t_obj]
+                 if let Ok(func) = v8::Local::<v8::Function>::try_from(func_val) {
+                     let receiver = v8::undefined(&mut *tc).into();
+                     let args = [t_obj.into()];
+                     // Pass tc (which is a scope) 
+                     if func.call(&mut *tc, receiver, &args).is_none() {
+                         println!("{} {}", crate::utils::blue("[Titan]"), crate::utils::red("Extension Execution Failed"));
+                         if let Some(msg) = tc.message() {
+                             let text = msg.get(&mut *tc).to_rust_string_lossy(&mut *tc);
+                             println!("{} {}", crate::utils::red("Error details:"), text);
+                         }
+                     }
+                 }
+             } else {
+                 let msg = tc.message().unwrap();
+                 let text = msg.get(&mut *tc).to_rust_string_lossy(&mut *tc);
+                 println!("{} {} {}", crate::utils::blue("[Titan]"), crate::utils::red("Extension JS Error:"), text);
+             }
+         } else {
+             let msg = tc.message().unwrap();
+             let text = msg.get(&mut *tc).to_rust_string_lossy(&mut *tc);
+             println!("{} {} {}", crate::utils::blue("[Titan]"), crate::utils::red("Extension Compile Error:"), text);
+         }
+    }
 
     // t.db (Stub for now)
     let db_obj = v8::Object::new(scope);

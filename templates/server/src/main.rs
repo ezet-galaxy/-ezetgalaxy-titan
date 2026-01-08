@@ -156,7 +156,14 @@ async fn dynamic_handler_inner(
         .or_else(|| find_actions_dir(&state.project_root))
         .unwrap();
 
-    let action_path = actions_dir.join(format!("{}.jsbundle", action_name));
+    let mut action_path = actions_dir.join(format!("{}.jsbundle", action_name));
+    if !action_path.exists() {
+        let js_path = actions_dir.join(format!("{}.js", action_name));
+        if js_path.exists() {
+            action_path = js_path;
+        }
+    }
+
     let js_code = match fs::read_to_string(&action_path) {
         Ok(c) => c,
         Err(_) => {
@@ -311,10 +318,14 @@ async fn main() -> Result<()> {
     let state = AppState {
         routes: Arc::new(map),
         dynamic_routes: Arc::new(dynamic_routes),
-        project_root,
+        project_root: project_root.clone(),
     };
+    
+    // Load extensions
+    extensions::load_project_extensions(project_root.clone());
 
     let app = Router::new()
+
         .route("/", any(root_route))
         .fallback(any(dynamic_route))
         .with_state(state);
