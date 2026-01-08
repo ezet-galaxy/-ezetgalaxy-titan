@@ -404,46 +404,22 @@ function createExtension(name) {
 
     // 2. Process templates (replace {{name}})
     const title = name;
+    const nativeName = title.replace(/-/g, "_");
 
-    // 2a. titan.json
-    const titJsonPath = path.join(target, "titan.json");
-    if (fs.existsSync(titJsonPath)) {
-        let content = fs.readFileSync(titJsonPath, "utf8");
-        content = content.replace(/{{name}}/g, title);
-        fs.writeFileSync(titJsonPath, content);
-    }
+    const replaceAll = (filePath) => {
+        if (fs.existsSync(filePath)) {
+            let content = fs.readFileSync(filePath, "utf8");
+            content = content.replace(/{{name}}/g, title);
+            content = content.replace(/{{native_name}}/g, nativeName);
+            fs.writeFileSync(filePath, content);
+        }
+    };
 
-    // 2b. index.js
-    const idxPath = path.join(target, "index.js");
-    if (fs.existsSync(idxPath)) {
-        let content = fs.readFileSync(idxPath, "utf8");
-        content = content.replace(/{{name}}/g, title);
-        fs.writeFileSync(idxPath, content);
-    }
-
-    // 2c. README.md
-    const readmePath = path.join(target, "README.md");
-    if (fs.existsSync(readmePath)) {
-        let content = fs.readFileSync(readmePath, "utf8");
-        content = content.replace(/{{name}}/g, title);
-        fs.writeFileSync(readmePath, content);
-    }
-
-    // 2d. package.json
-    const pkgPath = path.join(target, "package.json");
-    if (fs.existsSync(pkgPath)) {
-        let content = fs.readFileSync(pkgPath, "utf8");
-        content = content.replace(/{{name}}/g, title);
-        fs.writeFileSync(pkgPath, content);
-    }
-
-    // 2e. native/Cargo.toml
-    const cargoPath = path.join(target, "native", "Cargo.toml");
-    if (fs.existsSync(cargoPath)) {
-        let content = fs.readFileSync(cargoPath, "utf8");
-        content = content.replace(/{{name}}/g, title);
-        fs.writeFileSync(cargoPath, content);
-    }
+    replaceAll(path.join(target, "titan.json"));
+    replaceAll(idxPath);
+    replaceAll(readmePath);
+    replaceAll(pkgPath);
+    replaceAll(cargoPath);
 
     console.log(cyan("Installing dependencies..."));
     try {
@@ -464,8 +440,8 @@ Next steps:
 }
 
 function runExtension() {
-    const localSdk = path.join(__dirname, "titan-sdk", "bin", "run.js");
-    
+    const localSdk = path.join(__dirname, "titanpl-sdk", "bin", "run.js");
+
     if (fs.existsSync(localSdk)) {
         console.log(cyan("[Titan] Using local SDK runner..."));
         try {

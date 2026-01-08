@@ -3,7 +3,7 @@
     "main": "index.js",
     "description": "A Titan extension",
     "native": {
-        "path": "native/target/release/{{name}}_native.dll",
+        "path": "native/target/release/{{native_name}}_native.dll",
         "functions": {
             "add": {
                 "symbol": "add",
