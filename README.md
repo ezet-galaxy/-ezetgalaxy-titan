@@ -276,7 +276,7 @@ No exports wiring. No globals. No boilerplate.
 
 # 📦 Version
 
-**Titan v25 — Stable**
+**Titan v26 — Stable**
 
 * Production-ready runtime
 * Safe JS execution
