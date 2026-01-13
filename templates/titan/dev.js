@@ -198,26 +198,55 @@ async function compileTypeScript(root, entryPath, skipExec) {
 }
 
 /**
- * Process JavaScript entry file
+ * Process JavaScript entry file through esbuild (same as TypeScript)
  * @param {string} root - Project root
  * @param {string} entryPath - Entry file path
  * @param {boolean} skipExec - Whether to skip execution
- * @returns {{ outFile: string, compiled: null }}
+ * @returns {Promise<{ outFile: string, compiled: string }>}
  */
-function processJavaScript(root, entryPath, skipExec) {
-    const jsContent = fs.readFileSync(entryPath, "utf8");
+async function processJavaScript(root, entryPath, skipExec) {
+    console.log("[Titan] Bundling app.js with esbuild...");
 
-    // Warn if import is missing
-    if (!jsContent.includes("titan/titan.js") && !jsContent.includes("titan.js")) {
-        console.log("[Titan] Note: Consider adding 'import t from \"../titan/titan.js\";' to your app.js");
+    const esbuild = await import("esbuild");
+    const titanDir = path.join(root, ".titan");
+    const outFile = path.join(titanDir, "app.compiled.mjs");
+
+    // Clean and recreate .titan directory to avoid cache issues
+    if (fs.existsSync(titanDir)) {
+        fs.rmSync(titanDir, { recursive: true, force: true });
     }
+    fs.mkdirSync(titanDir, { recursive: true });
+
+    // Calculate the absolute path to titan.js
+    const titanJsAbsolutePath = path.join(root, "titan", "titan.js").replace(/\\/g, "/");
+
+    // Bundle JS with esbuild
+    const titanPlugin = createTitanExternalPlugin(titanJsAbsolutePath);
+
+    await esbuild.build({
+        entryPoints: [entryPath],
+        outfile: outFile,
+        format: "esm",
+        platform: "node",
+        target: "node18",
+        bundle: true,
+        plugins: [titanPlugin],
+    });
+
+    // Read and process compiled output
+    let compiled = fs.readFileSync(outFile, "utf8");
+    compiled = injectTitanImportIfMissing(compiled, titanJsAbsolutePath, outFile);
+
+    // Debug output
+    logCompiledPreview(compiled);
+    verifyImportExists(compiled);
 
     // Execute if not skipped
     if (!skipExec) {
-        execSync(`node "${entryPath}"`, { stdio: "inherit", cwd: root });
+        execSync(`node "${outFile}"`, { stdio: "inherit", cwd: root });
     }
 
-    return { outFile: entryPath, compiled: null };
+    return { outFile, compiled };
 }
 
 /**
