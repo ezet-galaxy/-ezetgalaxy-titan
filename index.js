@@ -105,7 +105,7 @@ ${bold(cyan("Titan Planet"))}  v${TITAN_VERSION}
 
 ${green("titan init <project>")}        Create new Titan project (JavaScript)
 ${green("titan init <project> --ts")}   Create new Titan project (TypeScript)
-${green("titan create ext <n>")}        Create new Titan extension
+${green("titan create ext <name>")}        Create new Titan extension
 ${green("titan dev")}                   Dev mode (hot reload)
 ${green("titan build")}                 Build production Rust server
 ${green("titan start")}                 Start production binary

@@ -2,71 +2,77 @@ import fs from "fs";
 import path from "path";
 import esbuild from "esbuild";
 
-const root = process.cwd();
-const actionsDir = path.join(root, "app", "actions");
-const outDir = path.join(root, "server", "actions");
-
 /**
  * Bundle all actions (JS and TS) using esbuild
  */
-export async function bundle() {
-  console.log("[Titan] Bundling actions...");
+export async function bundle(root = process.cwd()) {
+    const actionsDir = path.join(root, "app", "actions");
+    const outDir = path.join(root, "server", "actions");
 
-  fs.mkdirSync(outDir, { recursive: true });
+    console.log("[Titan] Bundling actions...");
 
-  // Clean old bundles
-  for (const file of fs.readdirSync(outDir)) {
-    if (file.endsWith(".jsbundle")) {
-      fs.unlinkSync(path.join(outDir, file));
+    fs.mkdirSync(outDir, { recursive: true });
+
+    // Clean old bundles
+    if (fs.existsSync(outDir)) {
+        for (const file of fs.readdirSync(outDir)) {
+            if (file.endsWith(".jsbundle")) {
+                fs.unlinkSync(path.join(outDir, file));
+            }
+        }
     }
-  }
 
-  // Support both .js and .ts files
-  const files = fs
-    .readdirSync(actionsDir)
-    .filter((f) => /\.(js|ts)$/.test(f) && !f.endsWith(".d.ts"));
+    // Check if actions directory exists
+    if (!fs.existsSync(actionsDir)) {
+        console.log("[Titan] No actions directory found.");
+        return;
+    }
 
-  if (files.length === 0) {
-    console.log("[Titan] No actions found to bundle.");
-    return;
-  }
+    // Support both .js and .ts files
+    const files = fs
+        .readdirSync(actionsDir)
+        .filter((f) => /\.(js|ts)$/.test(f) && !f.endsWith(".d.ts"));
 
-  for (const file of files) {
-    const actionName = path.basename(file, path.extname(file));
-    const entry = path.join(actionsDir, file);
-    const outfile = path.join(outDir, actionName + ".jsbundle");
+    if (files.length === 0) {
+        console.log("[Titan] No actions found to bundle.");
+        return;
+    }
 
-    console.log(`[Titan] Bundling ${file} → ${actionName}.jsbundle`);
+    for (const file of files) {
+        const actionName = path.basename(file, path.extname(file));
+        const entry = path.join(actionsDir, file);
+        const outfile = path.join(outDir, actionName + ".jsbundle");
 
-    await esbuild.build({
-      entryPoints: [entry],
-      outfile,
-      bundle: true,
-      format: "iife",
-      globalName: "__titan_exports",
-      platform: "neutral",
-      target: "es2020",
+        console.log(`[Titan] Bundling ${file} → ${actionName}.jsbundle`);
 
-      // TypeScript support
-      loader: {
-        ".ts": "ts",
-        ".js": "js",
-      },
+        await esbuild.build({
+            entryPoints: [entry],
+            outfile,
+            bundle: true,
+            format: "iife",
+            globalName: "__titan_exports",
+            platform: "neutral",
+            target: "es2020",
 
-      // Strip types, no need for declaration files
-      tsconfigRaw: {
-        compilerOptions: {
-          experimentalDecorators: true,
-          useDefineForClassFields: true,
-        },
-      },
+            // TypeScript support
+            loader: {
+                ".ts": "ts",
+                ".js": "js",
+            },
 
-      banner: {
-        js: "const defineAction = (fn) => fn;",
-      },
+            tsconfigRaw: {
+                compilerOptions: {
+                    experimentalDecorators: true,
+                    useDefineForClassFields: true,
+                },
+            },
 
-      footer: {
-        js: `
+            banner: {
+                js: "const defineAction = (fn) => fn;",
+            },
+
+            footer: {
+                js: `
 (function () {
   const fn =
     __titan_exports["${actionName}"] ||
@@ -79,9 +85,9 @@ export async function bundle() {
   globalThis["${actionName}"] = fn;
 })();
 `,
-      },
-    });
-  }
+            },
+        });
+    }
 
-  console.log("[Titan] Bundling finished.");
+    console.log("[Titan] Bundling finished.");
 }
