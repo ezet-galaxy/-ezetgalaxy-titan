@@ -131,17 +131,8 @@ Both JS and Rust actions have access to the powerful `t` namespace:
 * `t.log(msg)` — Sandboxed, structured logging
 * `t.jwt.sign / verify` — Fast JWT operations
 * `t.password.hash / verify` — Secure password handling
-* `t.db` — Database access (coming soon)
-
-### 🛣 Intelligent Routing
-Define your routes in `routes.json`. Titan maps them to the correct action, regardless of language.
-
-```json
-{
-  "/hello": "hello",         // variable name matches filename (hello.js)
-  "/compute": "compute"      // variable name matches filename (compute.rs)
-}
-```
+* `t.db` — Database access
+---
 
 ### 🧩 Extensions System
 Extend the runtime with custom Rust engines using **Titan Extensions**.
