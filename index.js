@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { execSync, spawn } from "child_process";
 import { fileURLToPath } from "url";
+import prompts from "prompts";
 
 /* -------------------------------------------------------
  * ES Module Directory Resolution
@@ -202,17 +203,96 @@ function buildProjectPaths(root) {
 
 /**
  * Builds template directory paths.
- * @returns {{ templatesRoot: string, templateTitan: string, templateServer: string, templateExtension: string }}
+ * @param {string} [templateType="js"] - Tipo de plantilla (js, ts o rust)
+ * @returns {{ templatesRoot: string, templateBase: string, templateTitan: string, templateServer: string, templateExtension: string }}
  */
-function buildTemplatePaths() {
+function buildTemplatePaths(templateType = "js") {
     const templatesRoot = path.join(__dirname, "templates");
+    const templateBase = path.join(templatesRoot, templateType);
 
     return {
         templatesRoot,
-        templateTitan: path.join(templatesRoot, "titan"),
-        templateServer: path.join(templatesRoot, "server"),
+        templateBase,
+        templateTitan: path.join(templateBase, "titan"),
+        templateServer: path.join(templateBase, "server"),
         templateExtension: path.join(templatesRoot, "extension"),
     };
+}
+
+/* -------------------------------------------------------
+ * Template Detection
+ * ----------------------------------------------------- */
+
+/**
+ * Detects the project template type from package.json
+ * @param {string} root - Project root directory.
+ * @returns {string} Template type ('js', 'ts' or 'rust')
+ */
+function detectProjectTemplate(root) {
+    const pkgPath = path.join(root, "package.json");
+
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            if (pkg.titan?.template) {
+                return pkg.titan.template;
+            }
+        } catch (e) {
+            // Ignorar errores de parsing
+        }
+    }
+
+    return "js";
+}
+
+/**
+ * Parses template argument from CLI args
+ * @returns {string|null} Template type or null if not specified
+ */
+function parseTemplateArg() {
+    const templateArgIndex = args.findIndex(a => a === "--template" || a === "-t");
+    if (templateArgIndex !== -1 && args[templateArgIndex + 1]) {
+        return args[templateArgIndex + 1];
+    }
+    return null;
+}
+
+/**
+ * Prompts user to select a template interactively
+ * @returns {Promise<string|null>} Selected template or null if cancelled
+ */
+async function promptTemplateSelection() {
+    const response = await prompts({
+        type: "select",
+        name: "template",
+        message: "Select project template:",
+        choices: [
+            { title: "JavaScript", value: "js" },
+            { title: "TypeScript", value: "ts" },
+            { title: "Rust + JavaScript (Beta)", value: "rust" }
+        ],
+        initial: 0
+    });
+
+    return response.template || null;
+}
+
+/**
+ * Writes titan metadata to project's package.json
+ * @param {string} pkgPath - Path to package.json
+ * @param {string} templateType - Template type to store
+ */
+function writeTitanMetadata(pkgPath, templateType) {
+    if (!fs.existsSync(pkgPath)) return;
+
+    try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        pkg.titan = { template: templateType };
+        fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+        console.log(green("✔ Added titan metadata to package.json"));
+    } catch (e) {
+        console.log(yellow("Warning: Could not write titan metadata to package.json"));
+    }
 }
 
 /* -------------------------------------------------------
@@ -259,14 +339,16 @@ function help() {
     console.log(`
 ${bold(cyan("Titan Planet"))}  v${TITAN_VERSION}
 
-${green("titan init <project>")}        Create new Titan project (JavaScript)
-${green("titan init <project> --ts")}   Create new Titan project (TypeScript)
-${green("titan create ext <name>")}        Create new Titan extension
-${green("titan dev")}                   Dev mode (hot reload)
-${green("titan build")}                 Build production Rust server
-${green("titan start")}                 Start production binary
-${green("titan update")}                Update Titan engine
-${green("titan --version")}             Show Titan CLI version
+${green("titan init <project>")}              Create new Titan project (interactive)
+${green("titan init <project> -t js")}        Create JavaScript project
+${green("titan init <project> -t ts")}        Create TypeScript project
+${green("titan init <project> -t rust")}      Create Rust + JS project (Beta)
+${green("titan create ext <name>")}           Create new Titan extension
+${green("titan dev")}                         Dev mode (hot reload)
+${green("titan build")}                       Build production Rust server
+${green("titan start")}                       Start production binary
+${green("titan update")}                      Update Titan engine
+${green("titan --version")}                   Show Titan CLI version
 
 ${yellow("Note: `tit` is supported as a legacy alias.")}
 `);
@@ -277,23 +359,7 @@ ${yellow("Note: `tit` is supported as a legacy alias.")}
  * ----------------------------------------------------- */
 
 /**
- * Removes language-specific files based on project type selection.
- * @param {string} appDir - Application directory path.
- * @param {boolean} useTypeScript - Whether TypeScript is being used.
- */
-function removeAlternateLanguageFiles(appDir, useTypeScript) {
-    if (useTypeScript) {
-        removeFileIfExists(path.join(appDir, "app.js"));
-        removeFileIfExists(path.join(appDir, "actions", "hello.js"));
-    } else {
-        removeFileIfExists(path.join(appDir, "app.ts"));
-        removeFileIfExists(path.join(appDir, "actions", "hello.ts"));
-    }
-}
-
-/**
  * Sets up TypeScript or JavaScript configuration files.
- * Now copies both tsconfig and jsconfig regardless of project type.
  * @param {string} target - Target project directory.
  * @param {string} templateDir - Template directory path.
  */
@@ -339,21 +405,12 @@ function copyDotfiles(templateDir, target) {
 /**
  * Installs project dependencies using npm.
  * @param {string} target - Target project directory.
- * @param {boolean} useTypeScript - Whether to install TypeScript dependencies.
  */
-function installDependencies(target, useTypeScript) {
+function installDependencies(target) {
     execSync(`npm install esbuild chokidar --silent`, {
         cwd: target,
         stdio: "inherit",
     });
-
-    if (useTypeScript) {
-        execSync(`npm install -D typescript @types/node --silent`, {
-            cwd: target,
-            stdio: "inherit",
-        });
-        console.log(green("✔ TypeScript dependencies installed"));
-    }
 
     console.log(green("✔ Dependencies installed"));
 }
@@ -364,18 +421,31 @@ function installDependencies(target, useTypeScript) {
 
 /**
  * Initializes a new Titan project with the specified name.
- * Supports both JavaScript and TypeScript templates.
  * @param {string} name - Project name/directory.
  */
-function initProject(name) {
+async function initProject(name) {
     if (!name) {
-        console.log(red("Usage: titan init <project> [--ts]"));
+        console.log(red("Usage: titan init <project> [--template js|ts|rust]"));
         return;
     }
 
-    const useTypeScript = args.includes("--ts");
+    let templateType = parseTemplateArg();
+
+    if (!templateType) {
+        templateType = await promptTemplateSelection();
+        if (!templateType) {
+            console.log(yellow("Cancelled."));
+            return;
+        }
+    }
+
     const target = path.join(process.cwd(), name);
-    const templateDir = path.join(__dirname, "templates");
+    const { templateBase } = buildTemplatePaths(templateType);
+
+    if (!fs.existsSync(templateBase)) {
+        console.log(red(`Template "${templateType}" not found at ${templateBase}`));
+        return;
+    }
 
     if (fs.existsSync(target)) {
         console.log(yellow(`Folder already exists: ${target}`));
@@ -383,21 +453,20 @@ function initProject(name) {
     }
 
     console.log(cyan(`Creating Titan project → ${target}`));
-    if (useTypeScript) {
-        console.log(cyan("Using TypeScript template"));
-    }
+    console.log(cyan(`Template: ${templateType}`));
 
-    copyDir(templateDir, target, ["extension"]);
+    copyDir(templateBase, target, ["extension"]);
 
-    const appDir = path.join(target, "app");
-    removeAlternateLanguageFiles(appDir, useTypeScript);
-    setupLanguageConfig(target, templateDir);
-    copyDotfiles(templateDir, target);
+    setupLanguageConfig(target, templateBase);
+    copyDotfiles(templateBase, target);
+
+    const pkgPath = path.join(target, "package.json");
+    writeTitanMetadata(pkgPath, templateType);
 
     console.log(green("✔ Titan project created!"));
     console.log(cyan("Installing dependencies..."));
 
-    installDependencies(target, useTypeScript);
+    installDependencies(target);
 
     console.log(`
 Next steps:
@@ -818,14 +887,14 @@ function updateServerDirectory(projectServer, templateServer) {
 
 /**
  * Updates root-level configuration files.
- * @param {string} templatesRoot - Templates root directory.
+ * @param {string} templateBase - Template base directory.
  * @param {string} root - Project root directory.
  */
-function updateRootConfigFiles(templatesRoot, root) {
+function updateRootConfigFiles(templateBase, root) {
     const configFiles = [".gitignore", ".dockerignore", "Dockerfile"];
 
     for (const file of configFiles) {
-        const src = path.join(templatesRoot, file);
+        const src = path.join(templateBase, file);
         const dest = path.join(root, file);
 
         if (copyFileIfExists(src, dest)) {
@@ -836,19 +905,18 @@ function updateRootConfigFiles(templatesRoot, root) {
 
 /**
  * Updates language-specific configuration based on project type.
- * Now updates both tsconfig and jsconfig.
- * @param {string} templatesRoot - Templates root directory.
+ * @param {string} templateBase - Template base directory.
  * @param {string} root - Project root directory.
  */
-function updateLanguageConfig(templatesRoot, root) {
-    const tsconfigSrc = path.join(templatesRoot, "tsconfig.json");
+function updateLanguageConfig(templateBase, root) {
+    const tsconfigSrc = path.join(templateBase, "tsconfig.json");
     const tsconfigDest = path.join(root, "tsconfig.json");
 
     if (copyFileIfExists(tsconfigSrc, tsconfigDest)) {
         console.log(green("✔ Updated tsconfig.json"));
     }
 
-    const jsconfigSrc = path.join(templatesRoot, "jsconfig.json");
+    const jsconfigSrc = path.join(templateBase, "jsconfig.json");
     const jsconfigDest = path.join(root, "jsconfig.json");
 
     if (copyFileIfExists(jsconfigSrc, jsconfigDest)) {
@@ -858,11 +926,11 @@ function updateLanguageConfig(templatesRoot, root) {
 
 /**
  * Updates the TypeScript declaration file.
- * @param {string} templatesRoot - Templates root directory.
+ * @param {string} templateBase - Template base directory.
  * @param {string} appDir - Application directory.
  */
-function updateTypeDeclarations(templatesRoot, appDir) {
-    const srcDts = path.join(templatesRoot, "app", "titan.d.ts");
+function updateTypeDeclarations(templateBase, appDir) {
+    const srcDts = path.join(templateBase, "app", "titan.d.ts");
     const destDts = path.join(appDir, "titan.d.ts");
 
     if (!fs.existsSync(srcDts)) return;
@@ -877,11 +945,11 @@ function updateTypeDeclarations(templatesRoot, appDir) {
 
 /**
  * Updates the global types file (types/titan.d.ts).
- * @param {string} templatesRoot - Templates root directory.
+ * @param {string} templateBase - Template base directory.
  * @param {string} root - Project root directory.
  */
-function updateGlobalTypes(templatesRoot, root) {
-    const srcDts = path.join(templatesRoot, "types", "titan.d.ts");
+function updateGlobalTypes(templateBase, root) {
+    const srcDts = path.join(templateBase, "types", "titan.d.ts");
     const destDir = path.join(root, "types");
     const destDts = path.join(destDir, "titan.d.ts");
 
@@ -907,10 +975,13 @@ function updateGlobalTypes(templatesRoot, root) {
 function updateTitan() {
     const root = process.cwd();
 
+    const templateType = detectProjectTemplate(root);
+    console.log(cyan(`Detected template type: ${templateType}`));
+
     const projectTitan = path.join(root, "titan");
     const projectServer = path.join(root, "server");
 
-    const { templatesRoot, templateTitan, templateServer } = buildTemplatePaths();
+    const { templateBase, templateTitan, templateServer } = buildTemplatePaths(templateType);
 
     if (!validateTitanProject(projectTitan)) return;
     if (!validateCliTemplates(templateServer)) return;
@@ -919,10 +990,10 @@ function updateTitan() {
 
     updateTitanRuntime(projectTitan, templateTitan);
     updateServerDirectory(projectServer, templateServer);
-    updateRootConfigFiles(templatesRoot, root);
-    updateLanguageConfig(templatesRoot, root);
-    updateTypeDeclarations(templatesRoot, path.join(root, "app"));
-    updateGlobalTypes(templatesRoot, root);
+    updateRootConfigFiles(templateBase, root);
+    updateLanguageConfig(templateBase, root);
+    updateTypeDeclarations(templateBase, path.join(root, "app"));
+    updateGlobalTypes(templateBase, root);
 
     console.log(bold(green("✔ Titan update complete")));
 }
@@ -990,7 +1061,7 @@ function installExtensionDependencies(target) {
  */
 function createExtension(name) {
     if (!name) {
-        console.log(red("Usage: titan create ext <n>"));
+        console.log(red("Usage: titan create ext <name>"));
         return;
     }
 
@@ -1062,7 +1133,7 @@ function runExtension() {
  * Routes the CLI command to the appropriate handler.
  * @param {string} command - The command to execute.
  */
-function routeCommand(command) {
+async function routeCommand(command) {
     if (command === "create" && args[1] === "ext") {
         createExtension(args[2]);
         return;
@@ -1075,7 +1146,7 @@ function routeCommand(command) {
 
     switch (command) {
         case "init":
-            initProject(args[1]);
+            await initProject(args[1]);
             break;
         case "dev":
             devServer();
@@ -1117,7 +1188,10 @@ function isMainModule() {
 
 if (isMainModule() && !process.env.VITEST) {
     showDeprecationWarningIfNeeded();
-    routeCommand(cmd);
+    routeCommand(cmd).catch((err) => {
+        console.error(red(`Error: ${err.message}`));
+        process.exit(1);
+    });
 }
 
 /* -------------------------------------------------------
@@ -1143,5 +1217,10 @@ export {
     startProd,
     updateTitan,
     createExtension,
-    help
+    help,
+    detectProjectTemplate,
+    buildTemplatePaths,
+    parseTemplateArg,
+    promptTemplateSelection,
+    writeTitanMetadata,
 };

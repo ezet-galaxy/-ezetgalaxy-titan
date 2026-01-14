@@ -20,5 +20,8 @@ build/
 # testing
 coverage/
 
+# Rust builds
+templates/*/server/target/
+
 # mkctx - generated context
 mkctx/
