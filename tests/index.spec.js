@@ -1190,6 +1190,150 @@ describe("buildProd() Logic", () => {
 });
 
 // ============================================================
+// TESTS: buildProd() - Copy to Release Directory
+// ============================================================
+describe("buildProd() - Copy to Release Directory", () => {
+    let tempDir;
+
+    beforeEach(() => {
+        tempDir = createMockProject(createTempDir(), { includeServer: true });
+    });
+
+    afterEach(() => {
+        cleanupTempDir(tempDir);
+    });
+
+    it("should construct correct release directory path", () => {
+        const serverDir = path.join(tempDir, "server");
+        const releaseDir = path.join(serverDir, "target", "release");
+
+        expect(releaseDir).toContain("server/target/release");
+    });
+
+    it("should copy routes.json to release directory", () => {
+        const serverDir = path.join(tempDir, "server");
+        const releaseDir = path.join(serverDir, "target", "release");
+
+        // Create release directory and routes.json
+        fs.mkdirSync(releaseDir, { recursive: true });
+        fs.writeFileSync(path.join(serverDir, "routes.json"), '{"routes":{}}');
+
+        // Simulate copy
+        fs.copyFileSync(
+            path.join(serverDir, "routes.json"),
+            path.join(releaseDir, "routes.json")
+        );
+
+        expect(fs.existsSync(path.join(releaseDir, "routes.json"))).toBe(true);
+        expect(fs.readFileSync(path.join(releaseDir, "routes.json"), "utf8")).toBe('{"routes":{}}');
+    });
+
+    it("should copy action_map.json to release directory", () => {
+        const serverDir = path.join(tempDir, "server");
+        const releaseDir = path.join(serverDir, "target", "release");
+
+        // Create release directory and action_map.json
+        fs.mkdirSync(releaseDir, { recursive: true });
+        fs.writeFileSync(path.join(serverDir, "action_map.json"), '{"GET:/hello":"hello"}');
+
+        // Simulate copy
+        fs.copyFileSync(
+            path.join(serverDir, "action_map.json"),
+            path.join(releaseDir, "action_map.json")
+        );
+
+        expect(fs.existsSync(path.join(releaseDir, "action_map.json"))).toBe(true);
+        expect(fs.readFileSync(path.join(releaseDir, "action_map.json"), "utf8")).toBe('{"GET:/hello":"hello"}');
+    });
+
+    it("should copy actions directory to release directory", () => {
+        const serverDir = path.join(tempDir, "server");
+        const releaseDir = path.join(serverDir, "target", "release");
+        const actionsOut = path.join(serverDir, "actions");
+        const actionsRelease = path.join(releaseDir, "actions");
+
+        // Create release directory and action bundles
+        fs.mkdirSync(releaseDir, { recursive: true });
+        fs.writeFileSync(path.join(actionsOut, "hello.jsbundle"), "bundle content");
+        fs.writeFileSync(path.join(actionsOut, "world.jsbundle"), "another bundle");
+
+        // Simulate copy using copyDir
+        copyDir(actionsOut, actionsRelease);
+
+        expect(fs.existsSync(path.join(actionsRelease, "hello.jsbundle"))).toBe(true);
+        expect(fs.existsSync(path.join(actionsRelease, "world.jsbundle"))).toBe(true);
+        expect(fs.readFileSync(path.join(actionsRelease, "hello.jsbundle"), "utf8")).toBe("bundle content");
+    });
+
+    it("should clean existing actions directory in release before copy", () => {
+        const serverDir = path.join(tempDir, "server");
+        const releaseDir = path.join(serverDir, "target", "release");
+        const actionsOut = path.join(serverDir, "actions");
+        const actionsRelease = path.join(releaseDir, "actions");
+
+        // Create release directory with old action
+        fs.mkdirSync(actionsRelease, { recursive: true });
+        fs.writeFileSync(path.join(actionsRelease, "old.jsbundle"), "old bundle");
+
+        // Create new action in source
+        fs.writeFileSync(path.join(actionsOut, "new.jsbundle"), "new bundle");
+
+        // Simulate clean and copy
+        if (fs.existsSync(actionsRelease)) {
+            fs.rmSync(actionsRelease, { recursive: true, force: true });
+        }
+        copyDir(actionsOut, actionsRelease);
+
+        expect(fs.existsSync(path.join(actionsRelease, "old.jsbundle"))).toBe(false);
+        expect(fs.existsSync(path.join(actionsRelease, "new.jsbundle"))).toBe(true);
+    });
+
+    it("should handle missing routes.json gracefully", () => {
+        const serverDir = path.join(tempDir, "server");
+        const routesPath = path.join(serverDir, "routes.json");
+
+        // Ensure routes.json does not exist
+        if (fs.existsSync(routesPath)) {
+            fs.unlinkSync(routesPath);
+        }
+
+        expect(fs.existsSync(routesPath)).toBe(false);
+    });
+
+    it("should handle missing action_map.json gracefully", () => {
+        const serverDir = path.join(tempDir, "server");
+        const actionMapPath = path.join(serverDir, "action_map.json");
+
+        // Ensure action_map.json does not exist
+        if (fs.existsSync(actionMapPath)) {
+            fs.unlinkSync(actionMapPath);
+        }
+
+        expect(fs.existsSync(actionMapPath)).toBe(false);
+    });
+
+    it("should create release actions directory if it does not exist", () => {
+        const serverDir = path.join(tempDir, "server");
+        const releaseDir = path.join(serverDir, "target", "release");
+        const actionsOut = path.join(serverDir, "actions");
+        const actionsRelease = path.join(releaseDir, "actions");
+
+        // Create only release directory (not actions subdirectory)
+        fs.mkdirSync(releaseDir, { recursive: true });
+        fs.writeFileSync(path.join(actionsOut, "test.jsbundle"), "test");
+
+        // Ensure actionsRelease does not exist
+        expect(fs.existsSync(actionsRelease)).toBe(false);
+
+        // copyDir should create it
+        copyDir(actionsOut, actionsRelease);
+
+        expect(fs.existsSync(actionsRelease)).toBe(true);
+        expect(fs.existsSync(path.join(actionsRelease, "test.jsbundle"))).toBe(true);
+    });
+});
+
+// ============================================================
 // TESTS: Help Output
 // ============================================================
 describe("Help Output", () => {

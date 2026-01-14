@@ -51,6 +51,7 @@
     "start": "cd build && node ../index.js start",
     "help": "cd build && node ../index.js help",
     "update": "cd build && node ../index.js update",
+    "test-hello": "node scripts/test_hello.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
