@@ -299,25 +299,54 @@ async function devServer() {
 /* -------------------------------------------------------
  * BUILD
  * ----------------------------------------------------- */
-function buildProd() {
+async function buildProd() {
     console.log(cyan("Titan: Building production output..."));
 
     const root = process.cwd();
     const appJs = path.join(root, "app", "app.js");
+    const appTs = path.join(root, "app", "app.ts");
     const serverDir = path.join(root, "server");
     const actionsOut = path.join(serverDir, "actions");
 
     // BASIC CHECKS
-    if (!fs.existsSync(appJs)) {
-        console.log(red("ERROR: app/app.js not found."));
+    if (!fs.existsSync(appJs) && !fs.existsSync(appTs)) {
+        console.log(red("ERROR: app/app.js or app/app.ts not found."));
         process.exit(1);
     }
 
     // ----------------------------------------------------
-    // 1) BUILD METADATA + BUNDLE ACTIONS (ONE TIME ONLY)
+    // 1) BUILD METADATA + BUNDLE ACTIONS
     // ----------------------------------------------------
-    console.log(cyan("→ Building Titan metadata + bundling actions..."));
-    execSync("node app/app.js --build", { stdio: "inherit" });
+    console.log(cyan("→ Building Titan metadata..."));
+
+    // Si es TypeScript, compilar primero
+    if (fs.existsSync(appTs)) {
+        const dotTitan = path.join(root, ".titan");
+        const compiledApp = path.join(dotTitan, "app.js");
+
+        if (!fs.existsSync(dotTitan)) fs.mkdirSync(dotTitan, { recursive: true });
+
+        // Importar esbuild dinámicamente
+        const esbuild = await import("esbuild");
+        await esbuild.build({
+            entryPoints: [appTs],
+            outfile: compiledApp,
+            bundle: true,
+            platform: "node",
+            format: "esm",
+            packages: "external",
+            logLevel: "silent"
+        });
+
+        execSync(`node "${compiledApp}" --build`, { stdio: "inherit" });
+    } else {
+        execSync("node app/app.js --build", { stdio: "inherit" });
+    }
+
+    console.log(cyan("→ Bundling actions..."));
+    const bundlePath = path.join(root, "titan", "bundle.js");
+    const { bundle } = await import(bundlePath);
+    await bundle();
 
     // ensure actions directory exists
     fs.mkdirSync(actionsOut, { recursive: true });
@@ -325,9 +354,13 @@ function buildProd() {
     // verify bundled actions exist
     const bundles = fs.readdirSync(actionsOut).filter(f => f.endsWith(".jsbundle"));
     if (bundles.length === 0) {
-        console.log(red("ERROR: No actions bundled."));
-        console.log(red("Make sure your DSL outputs to server/actions."));
-        process.exit(1);
+        const rustActionsDir = path.join(serverDir, "src", "actions_rust");
+        const hasRustActions = fs.existsSync(rustActionsDir) &&
+            fs.readdirSync(rustActionsDir).some(f => f.endsWith(".rs") && f !== "mod.rs");
+
+        if (!hasRustActions) {
+            console.log(yellow("⚠ Warning: No JS or Rust actions found."));
+        }
     }
 
     bundles.forEach(file => {
@@ -355,8 +388,13 @@ function startProd() {
     const isWin = process.platform === "win32";
     const bin = isWin ? "titan-server.exe" : "titan-server";
 
-    const exe = path.join(process.cwd(), "server", "target", "release", bin);
-    execSync(`"${exe}"`, { stdio: "inherit" });
+    const serverDir = path.join(process.cwd(), "server");
+    const exe = path.join(serverDir, "target", "release", bin);
+
+    execSync(`"${exe}"`, {
+        stdio: "inherit",
+        cwd: serverDir
+    });
 }
 
 /* -------------------------------------------------------
@@ -576,35 +614,37 @@ function runExtension() {
 /* -------------------------------------------------------
  * ROUTER
  * ----------------------------------------------------- */
-// "titan create ext <name>" -> args = ["create", "ext", "calc_ext"]
-if (cmd === "create" && args[1] === "ext") {
-    createExtension(args[2]);
-} else if (cmd === "run" && args[1] === "ext") {
-    runExtension();
-} else {
-    switch (cmd) {
-        case "init": {
-            const projName = args[1];
-            let tpl = null;
+(async () => {
+    // "titan create ext <name>" -> args = ["create", "ext", "calc_ext"]
+    if (cmd === "create" && args[1] === "ext") {
+        createExtension(args[2]);
+    } else if (cmd === "run" && args[1] === "ext") {
+        runExtension();
+    } else {
+        switch (cmd) {
+            case "init": {
+                const projName = args[1];
+                let tpl = null;
 
-            const tIndex = args.indexOf("--template") > -1 ? args.indexOf("--template") : args.indexOf("-t");
-            if (tIndex > -1 && args[tIndex + 1]) {
-                tpl = args[tIndex + 1];
+                const tIndex = args.indexOf("--template") > -1 ? args.indexOf("--template") : args.indexOf("-t");
+                if (tIndex > -1 && args[tIndex + 1]) {
+                    tpl = args[tIndex + 1];
+                }
+
+                await initProject(projName, tpl);
+                break;
             }
-
-            initProject(projName, tpl);
-            break;
+            case "dev": devServer(); break;
+            case "build": await buildProd(); break;
+            case "start": startProd(); break;
+            case "update": updateTitan(); break;
+            case "--version":
+            case "-v":
+            case "version":
+                console.log(cyan(`Titan v${TITAN_VERSION}`));
+                break;
+            default:
+                help();
         }
-        case "dev": devServer(); break;
-        case "build": buildProd(); break;
-        case "start": startProd(); break;
-        case "update": updateTitan(); break;
-        case "--version":
-        case "-v":
-        case "version":
-            console.log(cyan(`Titan v${TITAN_VERSION}`));
-            break;
-        default:
-            help();
     }
-}
+})();
