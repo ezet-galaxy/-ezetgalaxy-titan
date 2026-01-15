@@ -13,6 +13,7 @@ use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
 use tokio::net::TcpListener;
 
 mod utils;
+mod errors;
 
 mod action_management;
 mod extensions;
@@ -293,11 +294,33 @@ async fn dynamic_handler_inner(
 
         let try_catch = &mut v8::TryCatch::new(scope);
 
-        let script = match v8::Script::compile(try_catch, source, None) {
+        let resource_name = v8::String::new(scope, &format!("app/actions/{}.ts", action_name_for_v8)).unwrap();
+        let resource_line_offset = 0;
+        let resource_column_offset = 0;
+        let resource_is_shared_cross_origin = false;
+        let script_id = v8::Integer::new(scope, 123);
+        let source_map_url = v8::String::new(scope, "").unwrap();
+        let resource_is_opaque = true;
+        let is_wasm = false;
+        let is_module = false;
+
+        let origin = v8::ScriptOrigin::new(
+            scope,
+            resource_name.into(),
+            resource_line_offset,
+            resource_column_offset,
+            resource_is_shared_cross_origin,
+            script_id,
+            source_map_url.into(),
+            resource_is_opaque,
+            is_wasm,
+            is_module,
+        );
+
+        let script = match v8::Script::compile(try_catch, source, Some(&origin)) {
             Some(s) => s,
             None => {
-                let err = try_catch.message().unwrap();
-                let msg = err.get(try_catch).to_rust_string_lossy(try_catch);
+                let msg = crate::errors::format_v8_error(try_catch, &action_name_for_v8);
                 return serde_json::json!({ "error": msg, "phase": "compile" });
             }
         };
@@ -313,8 +336,7 @@ async fn dynamic_handler_inner(
                 serde_json::from_str(&json_str).unwrap_or(Value::Null)
             }
             None => {
-                let err = try_catch.message().unwrap();
-                let msg = err.get(try_catch).to_rust_string_lossy(try_catch);
+                let msg = crate::errors::format_v8_error(try_catch, &action_name_for_v8);
                 serde_json::json!({ "error": msg, "phase": "execution" })
             }
         }
@@ -398,7 +420,23 @@ async fn main() -> Result<()> {
         .fallback(any(dynamic_route))
         .with_state(state);
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    let listener = loop {
+        match TcpListener::bind(format!("0.0.0.0:{}", port)).await {
+            Ok(l) => break l,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::AddrInUse {
+                    println!(
+                        "{} {}",
+                        utils::yellow("[Titan]"),
+                        utils::gray("Port in use, waiting for orbit to clear...")
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+                return Err(e.into());
+            }
+        }
+    };
 
     println!(
         "\x1b[38;5;39mTitan server running at:\x1b[0m http://localhost:{}",
