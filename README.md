@@ -13,6 +13,7 @@
 💙 **Enjoy development mode `titan dev`**
 💟 **Titan Planet docs:** https://titan-docs-ez.vercel.app/docs
 🚀 **CLI: `titan` is now the canonical command. `tit` remains supported as an alias.**
+🛡️ **Strict Mode:** Titan now enforces zero type errors before running.
 
 ---
 
@@ -21,15 +22,15 @@
 [![npm version](https://img.shields.io/npm/v/@ezetgalaxy/titan.svg?style=flat-square)](https://www.npmjs.com/package/@ezetgalaxy/titan)
 
 
-**JavaScript Simplicity. Native Rust Power. Zero Configuration.**
+**TypeScript Precision. JavaScript Simplicity. Native Rust Power. Zero Configuration.**
 
-Titan Planet is a **JavaScript-first Backend Framework** that compiles your application into a single, high-performance native binary. It embeds a V8 JavaScript runtime directly into a specialized Rust + Axum server.
+Titan Planet is a **JavaScript/TypeScript-first Backend Framework** that compiles your application into a single, high-performance native binary. It embeds a V8 JavaScript runtime directly into a specialized Rust + Axum server.
 
-**Start with pure JavaScript.**
+**Start with pure TypeScript/JavaScript.**
 **Need raw power? Add Rust actions seamlessly.**
 Titan handles the compilation, bundling, and routing automatically for both.
 
-Titan = **JavaScript productivity × Rust performance × Zero DevOps**
+Titan = **TS/JS productivity × Rust performance × Zero DevOps**
 
 ---
 
@@ -38,8 +39,8 @@ Titan = **JavaScript productivity × Rust performance × Zero DevOps**
 | Feature                              | Titan | Express/Nest | FastAPI | Bun       |
 | ------------------------------------ | ----- | ------------ | ------- | --------- |
 | Native binary output                 | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
-| Hybrid Rust + JS Actions             | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
-| Pure JavaScript developer experience | ✅ Yes | ✅ Yes        | ❌ No    | ❌ Partial |
+| Hybrid Rust + JS/TS Actions          | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
+| Strict TypeScript Enforcement        | ✅ Yes | ❌ Setup Req. | ❌ No    | ❌ Partial |
 | Zero-config Docker deploy            | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
 | Action-based architecture            | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
 | Hot reload dev server                | ✅ Yes | ❌ No         | ❌ No    | ❌ No      |
@@ -62,7 +63,9 @@ npm install -g @ezetgalaxy/titan
 titan init my-app
 # Follow the interactive prompt to choose:
 # - JavaScript (Standard)
+# - TypeScript (Strict)
 # - Rust + JavaScript (Beta)
+# - Rust + TypeScript (Beta)
 ```
 
 Inside your project:
@@ -73,10 +76,11 @@ titan dev
 
 You'll see the Titan Dev Server spin up:
 ```
-  Titan Planet   v26.8.0   [ Dev Mode ]
+  Titan Planet   v26.9.0   [ Dev Mode ]
 
-  Type:        Rust + JS Actions
+  Type:        Rust + TS Actions
   Hot Reload:  Enabled
+  Strict Mode: Active 🛡️
 
   • Preparing runtime... Done
   • A new orbit is ready for your app in 0.9s
@@ -87,7 +91,25 @@ You'll see the Titan Dev Server spin up:
 
 # ⚡ Hybrid Action System
 
-Titan is unique because it allows you to write endpoints in **both** JavaScript and Rust within the same project.
+Titan is unique because it allows you to write endpoints in **JavaScript, TypeScript, and Rust** within the same project.
+
+### 🔵 TypeScript Actions (`app/actions/hello.ts`)
+Fully typed, strict, and auto-compiled.
+```typescript
+import { Context } from '@ezetgalaxy/titan';
+
+export function run(req: Context) {
+    t.log("Handling request with strict types...");
+    
+    // Type checking allows safe property access
+    const user = req.body as { name: string };
+    
+    return { 
+        message: "Hello from TypeScript!",
+        user_name: user.name 
+    };
+}
+```
 
 ### 🟡 JavaScript Actions (`app/actions/hello.js`)
 Perfect for business logic, rapid prototyping, and IO-bound tasks.
@@ -115,17 +137,43 @@ pub async fn run(req: Request<Body>) -> impl IntoResponse {
 }
 ```
 
-**Titan automatically detects, compiles, and routes both types.**
+**Titan automatically detects, compiles, and routes all types.**
+* `.ts` files are type-checked and compiled with esbuild.
 * `.js` files are bundled with esbuild.
 * `.rs` files are compiled into the native binary.
-* Both share the same `routes.json` configuration.
+* All share the same `routes.json` configuration.
+
+---
+
+# 🛡️ Strict Type Safety & Error Logs
+
+Titan prioritizes code quality by enforcing **Strict TypeScript** logic during development. 
+
+If `titan dev` detects a type error, the server **will not run**. This ensures you never ship or test broken code.
+
+### Sample Error Output
+When a type error occurs, Titan pauses execution and provides a clear, actionable log:
+
+```text
+[Titan] ❌ TypeScript Error:
+app/actions/payment.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
+
+    10 |    const amount: number = req.body.amount;
+    11 |    
+  > 12 |    processPayment( "100" ); // Error here
+       |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+[Titan] 🛑 Server paused due to type errors. Fix them to resume.
+```
+
+Once fixed, the server automatically resumes.
 
 ---
 
 # ✨ Core Capabilities
 
 ### 🔌 Unified Runtime API (`t`)
-Both JS and Rust actions have access to the powerful `t` namespace:
+All actions (JS/TS/Rust) have access to the powerful `t` namespace:
 
 * `t.fetch(url, options)` — High-performance HTTP client
 * `t.log(msg)` — Sandboxed, structured logging
@@ -143,7 +191,7 @@ Extend the runtime with custom Rust engines using **Titan Extensions**.
 
 # 📦 Deployment
 
-Titan compiles your entire app—JS code, Rust code, and server logic—into a **single executable**.
+Titan compiles your entire app—JS/TS code, Rust code, and server logic—into a **single executable**.
 
 * **Tiny Docker Images**: Alpine-based, ~20MB compressed.
 * **Instant Startup**: No node_modules overhead.
@@ -152,7 +200,7 @@ Titan compiles your entire app—JS code, Rust code, and server logic—into a *
 ---
 
 # 🧱 Architecture Note
-Titan is **not** a Node.js framework. It is a Rust server that speaks JavaScript.
+Titan is **not** a Node.js framework. It is a Rust server that speaks JavaScript/TypeScript.
 * **No Event Loop** for JS (Request/Response model).
 * **No `require`** (Use raw imports or bundled dependencies).
 * **True Isolation** per request.
@@ -161,6 +209,7 @@ Titan is **not** a Node.js framework. It is a Rust server that speaks JavaScript
 
 **Titan v26 — Stable**
 * Production-ready Hybrid Runtime
+* Strict TypeScript Support
 * Native Rust Performance
 * Zero-Config Cloud Deployment
 
