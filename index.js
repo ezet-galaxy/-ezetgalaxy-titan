@@ -150,7 +150,7 @@ async function initProject(name, templateName) {
             message: 'Select language:',
             choices: [
                 { title: 'JavaScript', value: 'js' },
-                { title: 'TypeScript', value: 'ts' }
+                { title: 'TypeScript', value: 'ts' },
             ],
             initial: 0
         });

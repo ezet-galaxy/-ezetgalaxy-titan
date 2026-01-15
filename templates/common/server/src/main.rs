@@ -16,6 +16,7 @@ mod utils;
 
 mod action_management;
 mod extensions;
+mod actions_rust;
 
 use action_management::{
     DynamicRoute, RouteVal, find_actions_dir, match_dynamic_route, resolve_actions_dir,
@@ -45,7 +46,7 @@ async fn dynamic_handler_inner(
     req: Request<Body>,
 ) -> impl IntoResponse {
     // ---------------------------
-    // BASIC REQUEST INFO
+    // BASIC REQUEST INFO (No body consumption yet)
     // ---------------------------
     let method = req.method().as_str().to_uppercase();
     let path = req.uri().path().to_string();
@@ -57,45 +58,6 @@ async fn dynamic_handler_inner(
     let start = Instant::now();
     let mut route_label = String::from("not_found");
     let mut route_kind = "none"; // exact | dynamic | reply
-
-    // ---------------------------
-    // QUERY PARSING
-    // ---------------------------
-    let query: HashMap<String, String> = req
-        .uri()
-        .query()
-        .map(|q| {
-            q.split('&')
-                .filter_map(|pair| {
-                    let mut it = pair.splitn(2, '=');
-                    Some((it.next()?.to_string(), it.next().unwrap_or("").to_string()))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // ---------------------------
-    // HEADERS & BODY
-    // ---------------------------
-    let (parts, body) = req.into_parts();
-
-    let headers = parts
-        .headers
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-        .collect::<HashMap<String, String>>();
-
-    let body_bytes = match to_bytes(body, usize::MAX).await {
-        Ok(b) => b,
-        Err(_) => return (StatusCode::BAD_REQUEST, "Failed to read request body").into_response(),
-    };
-
-    let body_str = String::from_utf8_lossy(&body_bytes).to_string();
-    let body_json: Value = if body_str.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_str(&body_str).unwrap_or(Value::String(body_str))
-    };
 
     // ---------------------------
     // ROUTE RESOLUTION
@@ -145,6 +107,76 @@ async fn dynamic_handler_inner(
         }
     }
 
+    // ---------------------------
+    // RUST ACTION CHECK
+    // ---------------------------
+    if let Some(name) = &action_name {
+        if let Some(rust_action) = actions_rust::get_action(name) {
+             let elapsed = start.elapsed();
+             match route_kind {
+                "dynamic" => println!(
+                    "{} {} {} {} {} {}",
+                    blue("[Titan]"),
+                    green(&format!("{} {}", method, path)),
+                    white("→"),
+                    green(&route_label),
+                    white("(rust)"),
+                    gray(&format!("in {:.2?}", elapsed))
+                ),
+                "exact" => println!(
+                    "{} {} {} {} {} {}",
+                    blue("[Titan]"),
+                    white(&format!("{} {}", method, path)),
+                    white("→"),
+                    yellow(&route_label),
+                    white("(rust)"),
+                    gray(&format!("in {:.2?}", elapsed))
+                ),
+                _ => {}
+            }
+            return rust_action(req).await.into_response();
+        }
+    }
+
+    // ---------------------------
+    // QUERY PARSING (For JS)
+    // ---------------------------
+    let query: HashMap<String, String> = req
+        .uri()
+        .query()
+        .map(|q| {
+            q.split('&')
+                .filter_map(|pair| {
+                    let mut it = pair.splitn(2, '=');
+                    Some((it.next()?.to_string(), it.next().unwrap_or("").to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // ---------------------------
+    // HEADERS & BODY (CONSUME REQ)
+    // ---------------------------
+    let (parts, body) = req.into_parts();
+
+    let headers = parts
+        .headers
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+        .collect::<HashMap<String, String>>();
+
+    let body_bytes = match to_bytes(body, usize::MAX).await {
+        Ok(b) => b,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Failed to read request body").into_response(),
+    };
+
+    let body_str = String::from_utf8_lossy(&body_bytes).to_string();
+    let body_json: Value = if body_str.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&body_str).unwrap_or(Value::String(body_str))
+    };
+
     let action_name = match action_name {
         Some(a) => a,
         None => {
@@ -161,7 +193,7 @@ async fn dynamic_handler_inner(
     };
 
     // ---------------------------
-    // LOAD ACTION
+    // LOAD JS ACTION
     // ---------------------------
     let resolved = resolve_actions_dir();
     let actions_dir = resolved
@@ -368,7 +400,6 @@ async fn main() -> Result<()> {
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
-    
     println!(
         "\x1b[38;5;39mTitan server running at:\x1b[0m http://localhost:{}",
         port
