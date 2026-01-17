@@ -3,7 +3,7 @@ import prompts from "prompts";
 import fs from "fs";
 import path from "path";
 import { execSync, spawn } from "child_process";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 /* Resolve __dirname for ES modules */
 const __filename = fileURLToPath(import.meta.url);
@@ -12,17 +12,17 @@ const __dirname = path.dirname(__filename);
 /* -------------------------------------------------------
  * Colors
  * ----------------------------------------------------- */
-const cyan = (t) => `\x1b[36m${t}\x1b[0m`;
-const green = (t) => `\x1b[32m${t}\x1b[0m`;
-const yellow = (t) => `\x1b[33m${t}\x1b[0m`;
-const red = (t) => `\x1b[31m${t}\x1b[0m`;
-const bold = (t) => `\x1b[1m${t}\x1b[0m`;
-const gray = (t) => `\x1b[90m${t}\x1b[0m`;
+export const cyan = (t) => `\x1b[36m${t}\x1b[0m`;
+export const green = (t) => `\x1b[32m${t}\x1b[0m`;
+export const yellow = (t) => `\x1b[33m${t}\x1b[0m`;
+export const red = (t) => `\x1b[31m${t}\x1b[0m`;
+export const bold = (t) => `\x1b[1m${t}\x1b[0m`;
+export const gray = (t) => `\x1b[90m${t}\x1b[0m`;
 
 /* -------------------------------------------------------
  * Invocation detection (tit vs titan)
  * ----------------------------------------------------- */
-function wasInvokedAsTit() {
+export function wasInvokedAsTit() {
     const script = process.argv[1];
     if (script) {
         const base = path.basename(script, path.extname(script)).toLowerCase();
@@ -51,7 +51,6 @@ function wasInvokedAsTit() {
 
     return false;
 }
-
 const isTitAlias = wasInvokedAsTit();
 
 if (isTitAlias) {
@@ -64,23 +63,24 @@ if (isTitAlias) {
 }
 
 /* -------------------------------------------------------
- * Args
- * ----------------------------------------------------- */
-const args = process.argv.slice(2);
-const cmd = args[0];
-
-/* -------------------------------------------------------
  * Titan version
  * ----------------------------------------------------- */
-const pkg = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "package.json"), "utf8")
-);
-const TITAN_VERSION = pkg.version;
+let TITAN_VERSION = "0.1.0";
+try {
+    const pkg = JSON.parse(
+        fs.readFileSync(path.join(__dirname, "package.json"), "utf8")
+    );
+    TITAN_VERSION = pkg.version;
+} catch (e) {
+    // Use default version
+}
+
+export { TITAN_VERSION };
 
 /* -------------------------------------------------------
  * Utils
  * ----------------------------------------------------- */
-function copyDir(src, dest, excludes = []) {
+export function copyDir(src, dest, excludes = []) {
     fs.mkdirSync(dest, { recursive: true });
 
     for (const file of fs.readdirSync(src)) {
@@ -103,26 +103,26 @@ function copyDir(src, dest, excludes = []) {
 /* -------------------------------------------------------
  * HELP
  * ----------------------------------------------------- */
-function help() {
+export function help() {
     console.log(`
-${bold(cyan("Titan Planet"))}  v${TITAN_VERSION}
+ ${bold(cyan("Titan Planet"))}  v${TITAN_VERSION}
 
-${green("titan init <project> [-t <template>]")}   Create new Titan project
-${green("titan create ext <name>")} Create new Titan extension
-${green("titan dev")}              Dev mode (hot reload)
-${green("titan build")}            Build production Rust server
-${green("titan start")}            Start production binary
-${green("titan update")}           Update Titan engine
-${green("titan --version")}        Show Titan CLI version
+ ${green("titan init <project> [-t <template>]")}   Create new Titan project
+ ${green("titan create ext <name>")} Create new Titan extension
+ ${green("titan dev")}              Dev mode (hot reload)
+ ${green("titan build")}            Build production Rust server
+ ${green("titan start")}            Start production binary
+ ${green("titan update")}           Update Titan engine
+ ${green("titan --version")}        Show Titan CLI version
 
-${yellow("Note: `tit` is supported as a legacy alias.")}
+ ${yellow("Note: `tit` is supported as a legacy alias.")}
 `);
 }
 
 /* -------------------------------------------------------
  * INIT
  * ----------------------------------------------------- */
-async function initProject(name, templateName) {
+export async function initProject(name, templateName) {
     let projName = name;
 
     if (!projName) {
@@ -150,7 +150,7 @@ async function initProject(name, templateName) {
             message: 'Select language:',
             choices: [
                 { title: 'JavaScript', value: 'js' },
-                { title: 'TypeScript', value: 'ts' }
+                { title: 'TypeScript', value: 'ts' },
             ],
             initial: 0
         });
@@ -196,9 +196,14 @@ async function initProject(name, templateName) {
 
     const target = path.join(process.cwd(), projName);
     const templateDir = path.join(__dirname, "templates", selectedTemplate);
+    const commonDir = path.join(__dirname, "templates", "common");
 
     if (!fs.existsSync(templateDir)) {
         console.log(red(`Template '${selectedTemplate}' not found.`));
+        return;
+    }
+    if (!fs.existsSync(commonDir)) {
+        console.log(red(`Common template folder not found.`));
         return;
     }
 
@@ -212,12 +217,17 @@ async function initProject(name, templateName) {
     console.log(gray(`   Template: ${selectedTemplate}`));
 
     // ----------------------------------------------------------
-    // 1. Copy full template directory
+    // 1. Copy full COMMON directory
+    // ----------------------------------------------------------
+    copyDir(commonDir, target, ["_gitignore", "_dockerignore"]);
+
+    // ----------------------------------------------------------
+    // 2. Copy full SELECTED template directory
     // ----------------------------------------------------------
     copyDir(templateDir, target, ["_gitignore", "_dockerignore"]);
 
     // ----------------------------------------------------------
-    // 2. Explicitly install dotfiles
+    // 3. Explicitly install dotfiles from COMMON directory
     // ----------------------------------------------------------
     const dotfiles = {
         "_gitignore": ".gitignore",
@@ -225,7 +235,7 @@ async function initProject(name, templateName) {
     };
 
     for (const [srcName, destName] of Object.entries(dotfiles)) {
-        const src = path.join(templateDir, srcName);
+        const src = path.join(commonDir, srcName);
         const dest = path.join(target, destName);
 
         if (fs.existsSync(src)) {
@@ -233,10 +243,18 @@ async function initProject(name, templateName) {
         }
     }
 
-    // Dockerfile is safe as-is
-    const dockerfileSrc = path.join(templateDir, "Dockerfile");
-    if (fs.existsSync(dockerfileSrc)) {
-        fs.copyFileSync(dockerfileSrc, path.join(target, "Dockerfile"));
+    const pkgPath = path.join(target, "package.json");
+
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkgContent = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+            if (!pkgContent.titan) pkgContent.titan = {};
+            pkgContent.titan.template = selectedTemplate;
+            fs.writeFileSync(pkgPath, JSON.stringify(pkgContent, null, 2));
+            console.log(gray(`   Metadata set: ${selectedTemplate}`));
+        } catch (e) {
+            console.log(yellow("⚠ Could not write template metadata to package.json"));
+        }
     }
 
     console.log(green("✔ Project structure created"));
@@ -263,7 +281,7 @@ async function initProject(name, templateName) {
 /* -------------------------------------------------------
  * DEV SERVER
  * ----------------------------------------------------- */
-async function devServer() {
+export async function devServer() {
     const root = process.cwd();
     const devScript = path.join(root, "titan", "dev.js");
 
@@ -289,16 +307,17 @@ async function devServer() {
 /* -------------------------------------------------------
  * BUILD
  * ----------------------------------------------------- */
-async function buildProd() {
+export async function buildProd() {
     console.log(cyan("Titan: Building production output..."));
 
     const root = process.cwd();
     const appJs = path.join(root, "app", "app.js");
+    const appTs = path.join(root, "app", "app.ts");
     const serverDir = path.join(root, "server");
     const actionsOut = path.join(serverDir, "actions");
 
     // BASIC CHECKS
-    if (!fs.existsSync(appJs) && !fs.existsSync(path.join(root, "app", "app.ts"))) {
+    if (!fs.existsSync(appJs) && !fs.existsSync(appTs)) {
         console.log(red("ERROR: app/app.js or app/app.ts not found."));
         process.exit(1);
     }
@@ -327,10 +346,40 @@ async function buildProd() {
     }
 
     // ----------------------------------------------------
-    // 1) BUILD METADATA + BUNDLE ACTIONS (ONE TIME ONLY)
+    // 1) BUILD METADATA + BUNDLE ACTIONS
     // ----------------------------------------------------
-    console.log(cyan("→ Building Titan metadata + bundling actions..."));
-    execSync("node app/app.js --build", { stdio: "inherit" });
+    console.log(cyan("→ Building Titan metadata..."));
+
+    // Si es TypeScript, compilar primero
+    if (fs.existsSync(appTs)) {
+        const dotTitan = path.join(root, ".titan");
+        const compiledApp = path.join(dotTitan, "app.js");
+
+        if (!fs.existsSync(dotTitan)) fs.mkdirSync(dotTitan, { recursive: true });
+
+        // Importar esbuild dinámicamente
+        const esbuild = await import("esbuild");
+        await esbuild.build({
+            entryPoints: [appTs],
+            outfile: compiledApp,
+            bundle: true,
+            platform: "node",
+            format: "esm",
+            packages: "external",
+            logLevel: "silent"
+        });
+
+        execSync(`node "${compiledApp}" --build`, { stdio: "inherit" });
+    } else {
+        execSync("node app/app.js --build", { stdio: "inherit" });
+    }
+
+    console.log(cyan("→ Bundling actions..."));
+    const bundlePath = path.join(root, "titan", "bundle.js");
+    // Convert Windows path to file:// URL for ESM import
+    const bundleUrl = pathToFileURL(bundlePath).href;
+    const { bundle } = await import(bundleUrl);
+    await bundle();
 
     // ensure actions directory exists
     fs.mkdirSync(actionsOut, { recursive: true });
@@ -338,9 +387,13 @@ async function buildProd() {
     // verify bundled actions exist
     const bundles = fs.readdirSync(actionsOut).filter(f => f.endsWith(".jsbundle"));
     if (bundles.length === 0) {
-        console.log(red("ERROR: No actions bundled."));
-        console.log(red("Make sure your DSL outputs to server/actions."));
-        process.exit(1);
+        const rustActionsDir = path.join(serverDir, "src", "actions_rust");
+        const hasRustActions = fs.existsSync(rustActionsDir) &&
+            fs.readdirSync(rustActionsDir).some(f => f.endsWith(".rs") && f !== "mod.rs");
+
+        if (!hasRustActions) {
+            console.log(yellow("⚠ Warning: No JS or Rust actions found."));
+        }
     }
 
     bundles.forEach(file => {
@@ -369,7 +422,7 @@ async function buildProd() {
 /* -------------------------------------------------------
  * START
  * ----------------------------------------------------- */
-async function startProd() {
+export function startProd() {
     const isWin = process.platform === "win32";
     const bin = isWin ? "titan-server.exe" : "titan-server";
     const root = process.cwd();
@@ -388,21 +441,19 @@ async function startProd() {
         // Let's check for `.titan/app.js` which is dev artifact? No, use the prod build artifact.
         execSync(`node "${appJs}"`, { stdio: "inherit" });
     }
-
 }
 
 /* -------------------------------------------------------
  * UPDATE
  * ----------------------------------------------------- */
-
-function updateTitan() {
+export function updateTitan() {
     const root = process.cwd();
 
     const projectTitan = path.join(root, "titan");
     const projectServer = path.join(root, "server");
     const projectPkg = path.join(root, "package.json");
 
-    let templateType = "js"; // Default
+    let templateType = "js";
     if (fs.existsSync(projectPkg)) {
         try {
             const pkg = JSON.parse(fs.readFileSync(projectPkg, "utf-8"));
@@ -421,10 +472,8 @@ function updateTitan() {
         return;
     }
 
-    if (!fs.existsSync(templateServer)) {
-        console.log(red(`CLI seems corrupted or incomplete.`));
-        console.log(red(`Expected server template at: ${templateServer}`));
-        console.log(yellow(`If you are running from npx, try clearing cache or installing a specific version.`));
+    if (!fs.existsSync(templatesRoot)) {
+        console.log(red(`Template type '${templateType}' not found in CLI templates.`));
         return;
     }
 
@@ -433,15 +482,18 @@ function updateTitan() {
     // ----------------------------------------------------------
     // 1. Update titan/ runtime (authoritative, safe to replace)
     // ----------------------------------------------------------
-    fs.rmSync(projectTitan, {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 500,
-    });
-
-    copyDir(templateTitan, projectTitan);
-    console.log(green("✔ Updated titan/ runtime"));
+    if (fs.existsSync(templateTitan)) {
+        fs.rmSync(projectTitan, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 500,
+        });
+        copyDir(templateTitan, projectTitan);
+        console.log(green("✔ Updated titan/ runtime"));
+    } else {
+        console.log(yellow(`⚠ No titan/ folder found in template '${templateType}', skipping.`));
+    }
 
     // ----------------------------------------------------------
     // 2. Update server/ WITHOUT deleting the folder
@@ -463,17 +515,18 @@ function updateTitan() {
     const projectSrc = path.join(projectServer, "src");
     const templateSrc = path.join(templateServer, "src");
 
-    if (fs.existsSync(projectSrc)) {
-        fs.rmSync(projectSrc, {
-            recursive: true,
-            force: true,
-            maxRetries: 10,
-            retryDelay: 500,
-        });
+    if (fs.existsSync(templateSrc)) {
+        if (fs.existsSync(projectSrc)) {
+            fs.rmSync(projectSrc, {
+                recursive: true,
+                force: true,
+                maxRetries: 10,
+                retryDelay: 500,
+            });
+        }
+        copyDir(templateSrc, projectSrc);
+        console.log(green("✔ Updated server/src/"));
     }
-
-    copyDir(templateSrc, projectSrc);
-    console.log(green("✔ Updated server/src/"));
 
     // Root-level config files
     const rootFiles = {
@@ -495,15 +548,16 @@ function updateTitan() {
 
     // app/titan.d.ts (JS typing contract)
     const appDir = path.join(root, "app");
-    const srcDts = path.join(templateServer, "../app/titan.d.ts"); // templates/app/titan.d.ts
+    const srcDts = path.join(templateServer, "../app/titan.d.ts");
+    const fallbackDts = path.join(templatesRoot, "app", "titan.d.ts");
+    const finalDtsSrc = fs.existsSync(srcDts) ? srcDts : (fs.existsSync(fallbackDts) ? fallbackDts : null);
     const destDts = path.join(appDir, "titan.d.ts");
 
-    if (fs.existsSync(srcDts)) {
+    if (finalDtsSrc) {
         if (!fs.existsSync(appDir)) {
             fs.mkdirSync(appDir);
         }
-
-        fs.copyFileSync(srcDts, destDts);
+        fs.copyFileSync(finalDtsSrc, destDts);
         console.log(green("✔ Updated app/titan.d.ts"));
     }
 
@@ -516,7 +570,7 @@ function updateTitan() {
 /* -------------------------------------------------------
  * CREATE EXTENSION
  * ----------------------------------------------------- */
-function createExtension(name) {
+export function createExtension(name) {
     if (!name) {
         console.log(red("Usage: titan create ext <name>"));
         return;
@@ -585,7 +639,7 @@ Next steps:
 `);
 }
 
-function runExtension() {
+export function runExtension() {
     const localSdk = path.join(__dirname, "titanpl-sdk", "bin", "run.js");
 
     if (fs.existsSync(localSdk)) {
@@ -608,35 +662,44 @@ function runExtension() {
 /* -------------------------------------------------------
  * ROUTER
  * ----------------------------------------------------- */
-// "titan create ext <name>" -> args = ["create", "ext", "calc_ext"]
-if (cmd === "create" && args[1] === "ext") {
-    createExtension(args[2]);
-} else if (cmd === "run" && args[1] === "ext") {
-    runExtension();
-} else {
-    switch (cmd) {
-        case "init": {
-            const projName = args[1];
-            let tpl = null;
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
 
-            const tIndex = args.indexOf("--template") > -1 ? args.indexOf("--template") : args.indexOf("-t");
-            if (tIndex > -1 && args[tIndex + 1]) {
-                tpl = args[tIndex + 1];
+if (isMainModule) {
+    const args = process.argv.slice(2);
+    const cmd = args[0];
+
+    (async () => {
+        // "titan create ext <name>" -> args = ["create", "ext", "calc_ext"]
+        if (cmd === "create" && args[1] === "ext") {
+            createExtension(args[2]);
+        } else if (cmd === "run" && args[1] === "ext") {
+            runExtension();
+        } else {
+            switch (cmd) {
+                case "init": {
+                    const projName = args[1];
+                    let tpl = null;
+
+                    const tIndex = args.indexOf("--template") > -1 ? args.indexOf("--template") : args.indexOf("-t");
+                    if (tIndex > -1 && args[tIndex + 1]) {
+                        tpl = args[tIndex + 1];
+                    }
+
+                    await initProject(projName, tpl);
+                    break;
+                }
+                case "dev": devServer(); break;
+                case "build": await buildProd(); break;
+                case "start": startProd(); break;
+                case "update": updateTitan(); break;
+                case "--version":
+                case "-v":
+                case "version":
+                    console.log(cyan(`Titan v${TITAN_VERSION}`));
+                    break;
+                default:
+                    help();
             }
-
-            initProject(projName, tpl);
-            break;
         }
-        case "dev": devServer(); break;
-        case "build": await buildProd(); break;
-        case "start": await startProd(); break;
-        case "update": updateTitan(); break;
-        case "--version":
-        case "-v":
-        case "version":
-            console.log(cyan(`Titan v${TITAN_VERSION}`));
-            break;
-        default:
-            help();
-    }
+    })();
 }

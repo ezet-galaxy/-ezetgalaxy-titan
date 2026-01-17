@@ -23,3 +23,6 @@ test-apps/
 .vscode
 mkctx/
 mkctx.config.json
+coverage/
+
+build
