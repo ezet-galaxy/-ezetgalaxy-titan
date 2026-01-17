@@ -7,7 +7,7 @@
 /**
  * The Titan Request Object passed to actions.
  */
-interface TitanRequest {
+declare interface TitanRequest {
     body: any;
     method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
     path: string;
