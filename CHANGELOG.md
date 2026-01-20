@@ -1,5 +1,12 @@
 # Changelog
 
+## [26.10.1] - 2026-01-20
+
+### ✨ Features
+- **TitanPL ESLint Plugin Integration**:
+  - **Streamlined Linting**: Replaced custom ESLint configurations with `eslint-plugin-titanpl` in all project templates.
+  - **Reduced Boilerplate**: Removed the `globals` dependency and simplified `eslint.config.js` by leveraging the new plugin's preset, ensuring better integration with TitanPL specific rules.
+
 ## [26.10.0] - 2026-01-19
 
 ### 🧬 New Titan Native ABI Engine
