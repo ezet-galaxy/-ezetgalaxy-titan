@@ -1,5 +1,17 @@
 # Changelog
 
+## [26.10.2] - 2026-01-20
+
+### 🧩 Extension Development Experience
+- **Extension Type Support**: Added `index.d.ts` to the extension template.
+  - Enables extension authors to define type definitions that automatically merge with the global `Titan.Runtime` interface.
+  - Ensures consumers of the extension get full IntelliSense and type safety on `t.ext.my_extension`.
+- **Documentation**: Added a comprehensive `README.md` to the extension template, guiding developers on how to structure extensions and providing clear examples for TypeScript declaration merging.
+
+### 🐛 Fixes
+- **Global Type Conflicts**: Resolved `Cannot redeclare block-scoped variable 't'` errors in local development environments where multiple template definitions coexist. adjusted `titan.d.ts` across templates to use `var` for global declarations, ensuring safe merging.
+- **TitanPL SDK**: Bumped `titanpl-sdk` to `0.2.1` to reflect updated type definitions.
+
 ## [26.10.1] - 2026-01-20
 
 ### ✨ Features
