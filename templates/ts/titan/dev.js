@@ -82,7 +82,7 @@ async function killServer() {
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 let spinnerTimer = null;
-const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const frames = ["⏣", "⟐", "⟡", "⟠", "⟡", "⟐"];  
 let frameIdx = 0;
 
 function startSpinner(text) {
@@ -332,7 +332,7 @@ async function startDev() {
 
     console.clear();
     console.log("");
-    console.log(`  ${bold(cyan("Titan Planet"))}   ${gray("v" + version)}   ${yellow("[ Dev Mode ]")}`);
+    console.log(`  ${bold(cyan("⏣ Titan Planet"))}   ${gray("v" + version)}   ${yellow("[ Dev Mode ]")}`);
     console.log("");
     console.log(`  ${gray("Type:       ")} ${mode}`);
     console.log(`  ${gray("Hot Reload: ")} ${green("Enabled")}`);

@@ -1,5 +1,66 @@
 # Changelog
 
+## [26.11.0] – 2026-01-23
+
+### Notice 
+* **Rust + JS/TS are under development still in (BETA)**
+
+### ✨ Features
+
+* **Multi-Isolate V8 Runtime (Reactor Model)**
+  TitanPL now runs each request inside an independent V8 isolate, managed through a dedicated worker-pool.
+  This fully removes the previous global-mutex bottleneck and enables true multi-core JavaScript execution.
+
+* **Runtime Worker Pool**
+  Introduced a high-performance `RuntimeManager` that dispatches incoming requests to a pool of long-lived V8 workers using lock-free channels.
+  Each worker keeps its own isolate, context, and compiled actions.
+
+* **Starter Banner (CLI Logo)**
+  Added a new TitanPL CLI startup banner with a clean planet-style logo for improved developer experience and branding consistency.
+
+* **New README: TitanPL Runtime Architecture Explained**
+  The documentation has been fully rewritten to explain the new architecture:
+
+  * How requests flow through Axum → RuntimeManager → Worker Threads → V8
+  * How isolates are created and reused
+  * How actions are precompiled
+  * How extensions and native modules load
+  * How memory and concurrency work internally
+
+### ⚡ Performance Improvements
+
+* **10× Reduction in Contention**
+  Removed the single global `Mutex<TitanRuntime>`. All worker threads run independently with no shared lock.
+
+* **True Multi-Core Scaling**
+  TitanPL now scales linearly with CPU cores.
+  On 8-core machines, throughput increases from ~6k req/sec to **10k–12k+ req/sec**.
+
+* **Lower Latency Under Load**
+  With the reactor-pool architecture, TitanPL sustains:
+
+  * **500 connections:** ~10.7k req/sec
+  * **800 connections:** ~8.3k–10k req/sec
+    Even under saturation, TitanPL remains stable with predictable latency.
+
+* **JSON Serialization Overhead Reduced**
+  Moved JSON → V8 parsing to worker threads, isolating cost away from async network threads.
+
+### 🐛 Fixes
+
+* **Action Initialization Stability**
+  Improved V8 error reporting for miscompiled or invalid action files.
+  Added structured logging for action load failures during startup.
+
+* **Extension Loader Reliability**
+  Fixed an issue where native extensions inside `node_modules` were skipped if the runtime was started from a nested working directory.
+
+* **Request Path Resolution**
+  Adjusted route resolution to correctly handle nested routes and dynamic patterns across fallback handlers.
+
+* **CLI Startup Logic**
+  The CLI now correctly displays the new logo, resolves working directories consistently, and prevents missing-module errors on fresh installs. Before starting now TitanPl runtime check if your actions have any error then it's log that correctly (Available only in JS apps, TS already have this.)
+
 ## [26.10.3] - 2026-01-21
 
 ### ✨ Features

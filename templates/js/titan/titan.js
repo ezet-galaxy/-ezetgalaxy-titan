@@ -1,6 +1,12 @@
+/**
+ * Titan.js
+ * Main Titan runtime builder
+ * RULE: This file does NOT handle esbuild errors - bundle.js handles those
+ */
+
 import fs from "fs";
 import path from "path";
-import { bundle } from "./bundle.js";
+import bundle from "./bundle.js";
 
 const cyan = (t) => `\x1b[36m${t}\x1b[0m`;
 const green = (t) => `\x1b[32m${t}\x1b[0m`;
@@ -11,7 +17,6 @@ const actionMap = {};
 
 function addRoute(method, route) {
   const key = `${method.toUpperCase()}:${route}`;
-
 
   return {
     reply(value) {
@@ -41,19 +46,11 @@ function addRoute(method, route) {
 }
 
 /**
- * @typedef {Object} RouteHandler
- * @property {(value: any) => void} reply - Send a direct response
- * @property {(name: string) => void} action - Bind to a server-side action
- */
-
-/**
  * Titan App Builder
  */
 const t = {
   /**
    * Define a GET route
-   * @param {string} route 
-   * @returns {RouteHandler}
    */
   get(route) {
     return addRoute("GET", route);
@@ -61,8 +58,6 @@ const t = {
 
   /**
    * Define a POST route
-   * @param {string} route 
-   * @returns {RouteHandler}
    */
   post(route) {
     return addRoute("POST", route);
@@ -74,12 +69,14 @@ const t = {
 
   /**
    * Start the Titan Server
-   * @param {number} [port=3000] 
-   * @param {string} [msg=""] 
+   * RULE: Only calls bundle() - does NOT handle esbuild errors
+   * RULE: If bundle throws __TITAN_BUNDLE_FAILED__, stop immediately without printing
    */
   async start(port = 3000, msg = "") {
     try {
       console.log(cyan("[Titan] Preparing runtime..."));
+
+      // RULE: Just call bundle() - it handles its own errors
       await bundle();
 
       const base = path.join(process.cwd(), "server");
@@ -112,12 +109,18 @@ const t = {
       if (msg) console.log(cyan(msg));
 
     } catch (e) {
-      console.error(`\x1b[31m[Titan] Build Error: ${e.message}\x1b[0m`);
-      process.exit(1);
+      // RULE: If bundle threw __TITAN_BUNDLE_FAILED__, just re-throw it
+      // The error box was already printed by bundle.js
+      if (e.message === '__TITAN_BUNDLE_FAILED__') {
+        throw e;
+      }
+
+      // Other unexpected errors (not from bundle)
+      console.error(`\x1b[31m[Titan] Unexpected error: ${e.message}\x1b[0m`);
+      throw e;
     }
   }
 };
-
 
 /**
  * Titan App Builder (Alias for t)

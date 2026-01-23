@@ -11,12 +11,13 @@ use serde_json::Value;
 use jsonwebtoken::{encode, decode, Header, EncodingKey, DecodingKey, Validation};
 use bcrypt::{hash, verify, DEFAULT_COST};
 
-use crate::utils::{blue, gray, green, parse_expires_in};
+use crate::utils::{blue, gray, green, red, parse_expires_in};
 use libloading::{Library};
 use walkdir::WalkDir;
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc, OnceLock};
 use std::collections::HashMap;
 use std::fs;
+use crate::action_management::scan_actions; // Added import
 
 // ----------------------------------------------------------------------------
 // GLOBAL REGISTRY
@@ -191,6 +192,25 @@ pub fn load_project_extensions(root: PathBuf) {
 }
 
 
+// ----------------------------------------------------------------------------
+// TITAN RUNTIME (PERSISTENT)
+// ----------------------------------------------------------------------------
+
+pub struct TitanRuntime {
+    pub isolate: v8::OwnedIsolate,
+    pub context: v8::Global<v8::Context>,
+    pub actions: HashMap<String, v8::Global<v8::Function>>,
+}
+
+// SAFETY: V8 Isolates and Globals must be accessed by one thread at a time.
+// We enforce this via the Mutex<TitanRuntime> in TITAN_ENV.
+// The `spawn_blocking` mechanism ensures we are on a thread that can take the lock.
+unsafe impl Send for TitanRuntime {}
+unsafe impl Sync for TitanRuntime {}
+
+// Global Persistent Environment
+pub static TITAN_ENV: OnceLock<Mutex<TitanRuntime>> = OnceLock::new();
+
 static V8_INIT: Once = Once::new();
 
 pub fn init_v8() {
@@ -199,6 +219,302 @@ pub fn init_v8() {
         v8::V8::initialize_platform(platform);
         v8::V8::initialize();
     });
+}
+
+pub fn init_runtime_worker(root: PathBuf) -> TitanRuntime {
+    // 1. Init V8 Platform
+    init_v8();
+
+    // 2. Create the Isolate
+    let mut isolate = v8::Isolate::new(v8::CreateParams::default());
+    
+    // 3. Create the Context and Compile Everything
+    let (global_context, actions_map) = {
+        let handle_scope = &mut v8::HandleScope::new(&mut isolate);
+        let context = v8::Context::new(handle_scope, v8::ContextOptions::default());
+        let scope = &mut v8::ContextScope::new(handle_scope, context);
+        let global = context.global(scope);
+
+        // 3a. Inject Titan APIs (ONCE)
+        inject_extensions(scope, global);
+        
+        // Inject Root Metadata
+        let root_str = v8::String::new(scope, root.to_str().unwrap_or(".")).unwrap();
+        let root_key = v8::String::new(scope, "__titan_root").unwrap();
+        global.set(scope, root_key.into(), root_str.into());
+
+        // 3b. Load Actions (ONCE)
+        let mut map = HashMap::new();
+        let action_files = scan_actions(&root);
+        
+        for (name, path) in action_files {
+             if let Ok(code) = fs::read_to_string(&path) {
+                 let wrapped_source = format!(
+                     r#"
+                     (function() {{
+                         {}
+                     }})();
+                     globalThis["{}"];
+                     "#, 
+                     code, name
+                 );
+                 
+                 let source_str = v8::String::new(scope, &wrapped_source).unwrap();
+                 
+                 // Compile
+                 let try_catch = &mut v8::TryCatch::new(scope);
+                 if let Some(script) = v8::Script::compile(try_catch, source_str, None) {
+                     // Run to extract
+                     if let Some(val) = script.run(try_catch) {
+                         if val.is_function() {
+                             let func = v8::Local::<v8::Function>::try_from(val).unwrap();
+                             map.insert(name.clone(), v8::Global::new(try_catch, func));
+                         } else {
+                              println!("{} {} {} (Not a function)", blue("[Titan]"), red("Action failed:"), name);
+                         }
+                     } else {
+                          let msg = try_catch.message().unwrap().get(try_catch).to_rust_string_lossy(try_catch);
+                          println!("{} {} {} ({})", blue("[Titan]"), red("Action init error:"), name, msg);
+                     }
+                 } else {
+                      let msg = try_catch.message().unwrap().get(try_catch).to_rust_string_lossy(try_catch);
+                      println!("{} {} {} ({})", blue("[Titan]"), red("Action compile error:"), name, msg);
+                 }
+             }
+        }
+        
+        (v8::Global::new(scope, context), map)
+    };
+
+    // 4. Return Runtime
+    TitanRuntime {
+        isolate,
+        context: global_context,
+        actions: actions_map,
+    }
+}
+
+
+// EXECUTION PHASE
+pub fn execute_action_direct(
+    runtime: &mut TitanRuntime,
+    action_name: &str, 
+    req_body: &str, 
+    req_method: &str, 
+    req_path: &str, 
+    headers: &str, 
+    params: &str, 
+    query: &str
+) -> serde_json::Value {
+    // Split borrows: Destructure the mutable reference
+    let TitanRuntime { 
+        isolate, 
+        context: global_context, 
+        actions: actions_map 
+    } = runtime;
+    
+    // 3.2 Create HandleScope
+    let handle_scope = &mut v8::HandleScope::new(isolate);
+    
+    // 3.3 Enter Existing Context
+    let context = v8::Local::new(handle_scope, &*global_context);
+    let scope = &mut v8::ContextScope::new(handle_scope, context);
+    
+    // 3.4 Construct __titan_req
+    let req_obj = v8::Object::new(scope);
+
+    // method
+    let method_key = v8_str(scope, "method");
+    let method_val = v8_str(scope, req_method);
+    req_obj.set(scope, method_key.into(), method_val.into());
+
+    // path
+    let path_key = v8_str(scope, "path");
+    let path_val = v8_str(scope, req_path);
+    req_obj.set(scope, path_key.into(), path_val.into());
+
+    // body
+    let body_key = v8_str(scope, "body");
+    let body_val = if req_body.trim().is_empty() {
+        v8::null(scope).into()
+    } else {
+        let s = v8_str(scope, req_body);
+        v8::json::parse(scope, s).unwrap_or_else(|| v8::null(scope).into())
+    };
+    req_obj.set(scope, body_key.into(), body_val);
+
+    // headers
+    let headers_key = v8_str(scope, "headers");
+    let h_s = v8_str(scope, headers);
+    let h_v = v8::json::parse(scope, h_s).unwrap_or_else(|| v8::Object::new(scope).into());
+    req_obj.set(scope, headers_key.into(), h_v);
+
+    // params
+    let params_key = v8_str(scope, "params");
+    let p_s = v8_str(scope, params);
+    let p_v = v8::json::parse(scope, p_s).unwrap_or_else(|| v8::Object::new(scope).into());
+    req_obj.set(scope, params_key.into(), p_v);
+
+    // query
+    let query_key = v8_str(scope, "query");
+    let q_s = v8_str(scope, query);
+    let q_v = v8::json::parse(scope, q_s).unwrap_or_else(|| v8::Object::new(scope).into());
+    req_obj.set(scope, query_key.into(), q_v);
+
+    // Inject into global for action to access if needed (though we pass it as arg)
+    let global = context.global(scope);
+    let req_global_key = v8_str(scope, "__titan_req");
+    global.set(scope, req_global_key.into(), req_obj.into());
+
+    // 3.5 Look up precompiled action
+    let action_global = match actions_map.get(action_name) {
+        Some(a) => a,
+        None => return serde_json::json!({"error": format!("Action '{}' not found", action_name)}),
+    };
+    
+    let action_fn = v8::Local::new(scope, action_global);
+    let global = context.global(scope);
+    
+    // 3.6 Set Logging Meta BEFORE TryCatch
+    let action_str = v8::String::new(scope, action_name).unwrap();
+    let action_key = v8::String::new(scope, "__titan_action").unwrap();
+    global.set(scope, action_key.into(), action_str.into());
+
+    let try_catch = &mut v8::TryCatch::new(scope);
+
+    // Call function using try_catch as scope
+    if let Some(result) = action_fn.call(try_catch, global.into(), &[req_obj.into()]) {
+         // 3.7 Convert return value via V8.JSON.stringify
+         if let Some(json) = v8::json::stringify(try_catch, result) {
+             let json_str = json.to_rust_string_lossy(try_catch);
+             return serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
+         }
+    }
+    
+    // Error handling
+    let msg = try_catch.message().map(|m| m.get(try_catch).to_rust_string_lossy(try_catch)).unwrap_or("Unknown error".to_string());
+    serde_json::json!({"error": msg})
+}
+
+
+// ----------------------------------------------------------------------------
+// HIGH-PERFORMANCE V8 EXECUTION (TitanVM)
+// ----------------------------------------------------------------------------
+
+pub fn execute_action_optimized(
+    runtime: &mut TitanRuntime,
+    action_name: &str, 
+    req_body: Option<bytes::Bytes>, 
+    req_method: &str, 
+    req_path: &str, 
+    headers: &[(String, String)], 
+    params: &[(String, String)], 
+    query: &[(String, String)]
+) -> serde_json::Value {
+    // Split borrows: Destructure the mutable reference
+    let TitanRuntime { 
+        isolate, 
+        context: global_context, 
+        actions: actions_map 
+    } = runtime;
+    
+    // 3.2 Create HandleScope
+    let handle_scope = &mut v8::HandleScope::new(isolate);
+    
+    // 3.3 Enter Existing Context
+    let context = v8::Local::new(handle_scope, &*global_context);
+    let scope = &mut v8::ContextScope::new(handle_scope, context);
+    
+    // 3.4 Construct __titan_req
+    let req_obj = v8::Object::new(scope);
+
+    // method
+    let method_key = v8_str(scope, "method");
+    let method_val = v8_str(scope, req_method);
+    req_obj.set(scope, method_key.into(), method_val.into());
+
+    // path
+    let path_key = v8_str(scope, "path");
+    let path_val = v8_str(scope, req_path);
+    req_obj.set(scope, path_key.into(), path_val.into());
+
+    // body (Optimized ArrayBuffer)
+    let body_key = v8_str(scope, "rawBody");
+    let body_val: v8::Local<v8::Value> = if let Some(bytes) = req_body {
+        // Zero-ish copy: Convert Bytes to Vec -> Box without re-alloc if possible, but Bytes is Arc.
+        // We copy once to flat Vec. This is much faster than JSON parse.
+        let vec = bytes.to_vec();
+        let store = v8::ArrayBuffer::new_backing_store_from_boxed_slice(vec.into_boxed_slice());
+        let ab = v8::ArrayBuffer::with_backing_store(scope, &store.make_shared());
+        ab.into()
+    } else {
+        v8::null(scope).into()
+    };
+    req_obj.set(scope, body_key.into(), body_val);
+
+    // headers
+    let headers_key = v8_str(scope, "headers");
+    let headers_obj = v8::Object::new(scope);
+    for (k, v) in headers {
+        let k_v8 = v8_str(scope, k);
+        let v_v8 = v8_str(scope, v);
+        headers_obj.set(scope, k_v8.into(), v_v8.into());
+    }
+    req_obj.set(scope, headers_key.into(), headers_obj.into());
+
+    // params
+    let params_key = v8_str(scope, "params");
+    let params_obj = v8::Object::new(scope);
+    for (k, v) in params {
+        let k_v8 = v8_str(scope, k);
+        let v_v8 = v8_str(scope, v);
+        params_obj.set(scope, k_v8.into(), v_v8.into());
+    }
+    req_obj.set(scope, params_key.into(), params_obj.into());
+
+    // query
+    let query_key = v8_str(scope, "query");
+    let query_obj = v8::Object::new(scope);
+    for (k, v) in query {
+        let k_v8 = v8_str(scope, k);
+        let v_v8 = v8_str(scope, v);
+        query_obj.set(scope, k_v8.into(), v_v8.into());
+    }
+    req_obj.set(scope, query_key.into(), query_obj.into());
+
+    // Inject into global for action to access if needed
+    let global = context.global(scope);
+    let req_global_key = v8_str(scope, "__titan_req");
+    global.set(scope, req_global_key.into(), req_obj.into());
+
+    // 3.5 Look up precompiled action
+    let action_global = match actions_map.get(action_name) {
+        Some(a) => a,
+        None => return serde_json::json!({"error": format!("Action '{}' not found", action_name)}),
+    };
+    
+    let action_fn = v8::Local::new(scope, action_global);
+    let global = context.global(scope);
+    
+    // 3.6 Set Logging Meta BEFORE TryCatch
+    let action_str = v8::String::new(scope, action_name).unwrap();
+    let action_key = v8::String::new(scope, "__titan_action").unwrap();
+    global.set(scope, action_key.into(), action_str.into());
+
+    let try_catch = &mut v8::TryCatch::new(scope);
+
+    // Call function using try_catch as scope
+    if let Some(result) = action_fn.call(try_catch, global.into(), &[req_obj.into()]) {
+         // 3.7 Convert return value via V8.JSON.stringify
+         if let Some(json) = v8::json::stringify(try_catch, result) {
+             let json_str = json.to_rust_string_lossy(try_catch);
+             return serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
+         }
+    }
+    
+    // Error handling
+    let msg = try_catch.message().map(|m| m.get(try_catch).to_rust_string_lossy(try_catch)).unwrap_or("Unknown error".to_string());
+    serde_json::json!({"error": msg})
 }
 
 fn v8_str<'s>(scope: &mut v8::HandleScope<'s>, s: &str) -> v8::Local<'s, v8::String> {

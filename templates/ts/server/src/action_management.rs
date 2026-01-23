@@ -54,8 +54,9 @@ pub fn resolve_actions_dir() -> PathBuf {
 /// Try to find the directory that contains compiled action bundles.
 pub fn find_actions_dir(project_root: &PathBuf) -> Option<PathBuf> {
     let candidates = [
-        project_root.join("server").join("actions"),
+        project_root.join("app").join("actions"),
         project_root.join("actions"),
+        project_root.join("server").join("actions"),
         project_root.join("..").join("server").join("actions"),
         PathBuf::from("/app").join("actions"),
         PathBuf::from("actions"),
@@ -128,4 +129,42 @@ pub fn match_dynamic_route(
     }
 
     None
+}
+
+// -------------------------
+// ACTION SCANNING
+// -------------------------
+
+pub fn scan_actions(root: &PathBuf) -> HashMap<String, PathBuf> {
+    let mut map = HashMap::new();
+    
+    // Locate actions dir
+    let actions_dir = resolve_actions_dir();
+    let dir = if actions_dir.exists() {
+        actions_dir
+    } else {
+        match find_actions_dir(root) {
+            Some(d) => d,
+            None => return map, 
+        }
+    };
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            if ext != "js" && ext != "jsbundle" {
+                continue;
+            }
+            
+            let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if file_stem.is_empty() { continue; }
+            
+            map.insert(file_stem.to_string(), path);
+        }
+    }
+    
+    map
 }

@@ -1,6 +1,12 @@
+/**
+ * Titan.js
+ * Main Titan runtime builder
+ * RULE: This file does NOT handle esbuild errors - bundle.js handles those
+ */
+
 import fs from "fs";
 import path from "path";
-import { bundle } from "./bundle.js";
+import bundle from "./bundle.js";
 
 const cyan = (t) => `\x1b[36m${t}\x1b[0m`;
 const green = (t) => `\x1b[32m${t}\x1b[0m`;
@@ -11,7 +17,6 @@ const actionMap = {};
 
 function addRoute(method, route) {
   const key = `${method.toUpperCase()}:${route}`;
-
 
   return {
     reply(value) {
@@ -40,11 +45,20 @@ function addRoute(method, route) {
   };
 }
 
+/**
+ * Titan App Builder
+ */
 const t = {
+  /**
+   * Define a GET route
+   */
   get(route) {
     return addRoute("GET", route);
   },
 
+  /**
+   * Define a POST route
+   */
   post(route) {
     return addRoute("POST", route);
   },
@@ -53,9 +67,16 @@ const t = {
     console.log(`[\x1b[35m${module}\x1b[0m] ${msg}`);
   },
 
+  /**
+   * Start the Titan Server
+   * RULE: Only calls bundle() - does NOT handle esbuild errors
+   * RULE: If bundle throws __TITAN_BUNDLE_FAILED__, stop immediately without printing
+   */
   async start(port = 3000, msg = "") {
     try {
       console.log(cyan("[Titan] Preparing runtime..."));
+
+      // RULE: Just call bundle() - it handles its own errors
       await bundle();
 
       const base = path.join(process.cwd(), "server");
@@ -88,11 +109,21 @@ const t = {
       if (msg) console.log(cyan(msg));
 
     } catch (e) {
-      console.error(`\x1b[31m[Titan] Build Error: ${e.message}\x1b[0m`);
-      process.exit(1);
+      // RULE: If bundle threw __TITAN_BUNDLE_FAILED__, just re-throw it
+      // The error box was already printed by bundle.js
+      if (e.message === '__TITAN_BUNDLE_FAILED__') {
+        throw e;
+      }
+
+      // Other unexpected errors (not from bundle)
+      console.error(`\x1b[31m[Titan] Unexpected error: ${e.message}\x1b[0m`);
+      throw e;
     }
   }
 };
 
-globalThis.t = t;
+/**
+ * Titan App Builder (Alias for t)
+ */
+export const Titan = t;
 export default t;

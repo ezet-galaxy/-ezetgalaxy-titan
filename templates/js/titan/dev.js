@@ -1,18 +1,20 @@
+/**
+ * Dev.js
+ * Titan development server with hot reload
+ * RULE: This file shows ONLY clean error messages - no raw logs, no stack traces
+ */
+
 import chokidar from "chokidar";
 import { spawn, execSync } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import { createRequire } from "module";
 
-// Required for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-
-// Colors
-import { createRequire } from "module";
-
-// Colors
+// Premium colors
 const cyan = (t) => `\x1b[36m${t}\x1b[0m`;
 const green = (t) => `\x1b[32m${t}\x1b[0m`;
 const yellow = (t) => `\x1b[33m${t}\x1b[0m`;
@@ -27,7 +29,6 @@ function getTitanVersion() {
         return JSON.parse(fs.readFileSync(pkgPath, "utf-8")).version;
     } catch (e) {
         try {
-            // Check levels up to find the framework root
             let cur = __dirname;
             for (let i = 0; i < 5; i++) {
                 const pkgPath = path.join(cur, "package.json");
@@ -40,7 +41,6 @@ function getTitanVersion() {
         } catch (e2) { }
 
         try {
-            // Fallback to calling tit --version
             const output = execSync("tit --version", { encoding: "utf-8" }).trim();
             const match = output.match(/v(\d+\.\d+\.\d+)/);
             if (match) return match[1];
@@ -53,7 +53,6 @@ let serverProcess = null;
 let isKilling = false;
 let isFirstBoot = true;
 
-// ... (killServer same as before) 
 async function killServer() {
     if (!serverProcess) return;
 
@@ -84,7 +83,7 @@ async function killServer() {
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 let spinnerTimer = null;
-const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const frames = ["⏣", "⟐", "⟡", "⟠", "⟡", "⟐"];  
 let frameIdx = 0;
 
 function startSpinner(text) {
@@ -113,6 +112,7 @@ function stopSpinner(success = true, text = "") {
 }
 
 async function startRustServer(retryCount = 0) {
+    const maxRetries = 3;
     const waitTime = retryCount > 0 ? 500 : 200;
 
     await killServer();
@@ -125,9 +125,7 @@ async function startRustServer(retryCount = 0) {
 
     let isReady = false;
     let stdoutBuffer = "";
-    let buildLogs = "";
 
-    // If it takes more than 15s, update the message
     const slowTimer = setTimeout(() => {
         if (!isReady && !isKilling) {
             startSpinner("Still stabilizing... (the first orbit takes longer)");
@@ -136,22 +134,12 @@ async function startRustServer(retryCount = 0) {
 
     serverProcess = spawn("cargo", ["run", "--quiet"], {
         cwd: serverPath,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "ignore"], // RULE: Ignore stderr to hide Cargo logs
         env: { ...process.env, CARGO_INCREMENTAL: "1" }
     });
 
     serverProcess.on("error", (err) => {
-        stopSpinner(false, "Failed to start orbit");
-        console.error(red(`[Titan] Error: ${err.message}`));
-    });
-
-    serverProcess.stderr.on("data", (data) => {
-        const str = data.toString();
-        if (isReady) {
-            process.stderr.write(data);
-        } else {
-            buildLogs += str;
-        }
+        stopSpinner(false, "Orbit stabilization failed");
     });
 
     serverProcess.stdout.on("data", (data) => {
@@ -168,7 +156,6 @@ async function startRustServer(retryCount = 0) {
                     process.stdout.write(stdoutBuffer);
                     isFirstBoot = false;
                 } else {
-                    // On subsequent reloads, only print non-banner lines from the buffer
                     const lines = stdoutBuffer.split("\n");
                     for (const line of lines) {
                         const isBanner = line.includes("Titan server running") ||
@@ -195,27 +182,63 @@ async function startRustServer(retryCount = 0) {
 
         if (code !== 0 && code !== null) {
             stopSpinner(false, "Orbit stabilization failed");
-            if (!isReady) {
-                console.log(gray("\n--- Build Logs ---"));
-                console.log(buildLogs);
-                console.log(gray("------------------\n"));
-            }
 
-            if (runTime < 15000 && retryCount < 5) {
+            if (runTime < 15000 && retryCount < maxRetries) {
                 await delay(2000);
                 await startRustServer(retryCount + 1);
+            } else if (retryCount >= maxRetries) {
+                console.log(gray("\n[Titan] Waiting for changes to retry..."));
             }
         }
     });
 }
 
+/**
+ * Rebuild JS runtime
+ * RULE: Only show "✖ Runtime preparation failed" on error
+ * RULE: No raw logs, no stack traces, no console.error output
+ */
 async function rebuild() {
     try {
-        execSync("node app/app.js", { stdio: "ignore" });
-        // bundle is called inside app.js (t.start)
+        // Execute app.js - pipe both stdout and stderr to capture and filter
+        const result = execSync("node app/app.js", {
+            encoding: "utf-8",
+            stdio: ["ignore", "pipe", "pipe"]
+        });
+
+        // If succeeded, just print stdout (usually empty unless successful logs)
+        if (result) process.stdout.write(result);
     } catch (e) {
-        stopSpinner(false, "Failed to prepare runtime");
-        console.log(red(`[Titan] Error: ${e.message}`));
+        stopSpinner(false, "Runtime preparation failed");
+
+        // RULE: Search for the error box in the output and print ONLY that
+        // This removes Node.js version, stack traces, etc.
+        const output = (e.stdout || "") + (e.stderr || "");
+
+        // Find the box content - look for the start border (accounting for ANSI color)
+        // Match from the first ┌ up to the last ┘
+        const startIdx = output.indexOf('┌');
+        const endIdx = output.lastIndexOf('┘');
+
+        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+            // Include potential ANSI codes before/after borders
+            let box = output.substring(startIdx - 5, endIdx + 1 + 5);
+            // Clean up to ensure we start/end at ANSI boundaries or borders
+            const realStart = box.indexOf('\x1b[31m┌');
+            const realEnd = box.lastIndexOf('┘\x1b[0m');
+
+            if (realStart !== -1 && realEnd !== -1) {
+                console.error("\n" + box.substring(realStart, realEnd + 5) + "\n");
+            } else {
+                // Fallback to simpler match
+                const simpleBox = output.substring(startIdx, endIdx + 1);
+                console.error("\n" + red(simpleBox) + "\n");
+            }
+        } else if (e.stderr && !e.stderr.includes("Node.js v")) {
+            console.error(red(e.stderr.trim()));
+        }
+
+        throw e;
     }
 }
 
@@ -240,7 +263,7 @@ async function startDev() {
 
     console.clear();
     console.log("");
-    console.log(`  ${bold(cyan("Titan Planet"))}   ${gray("v" + version)}   ${yellow("[ Dev Mode ]")}`);
+    console.log(`  ${bold(cyan("⏣ Titan Planet"))}     ${gray("v" + version)}    ${yellow("[ Dev Mode ]")}`);
     console.log("");
     console.log(`  ${gray("Type:       ")} ${mode}`);
     console.log(`  ${gray("Hot Reload: ")} ${green("Enabled")}`);
@@ -254,7 +277,7 @@ async function startDev() {
         await rebuild();
         await startRustServer();
     } catch (e) {
-        // console.log(red("[Titan] Initial build failed. Waiting for changes..."));
+        console.log(gray("\n[Titan] Waiting for changes to retry..."));
     }
 
     const watcher = chokidar.watch(["app", ".env"], {
@@ -271,7 +294,7 @@ async function startDev() {
                 await rebuild();
                 await startRustServer();
             } catch (e) {
-                // console.log(red("[Titan] Build failed -- waiting for changes..."));
+                console.log(gray("\n[Titan] Waiting for changes to retry..."));
             }
         }, 300);
     });
