@@ -38,8 +38,7 @@ Core request/response transfer paths have been polished, resulting in more relia
 
 ---
 
-
-## [26.12.4] – 2026-01-25
+## [26.12.5] – 2026-01-25
 
 ### Minor Stability Release
 
