@@ -32,10 +32,15 @@ jobs:
 
       - name: Install Titan CLI
         run: |
-          git -c credential.helper= clone --depth 1 https://github.com/ezetgalaxy/titanpl.git /tmp/titanpl
+          GIT_TERMINAL_PROMPT=0 \
+          git -c credential.helper= \
+              -c core.askpass= \
+              clone --depth 1 https://github.com/ezetgalaxy/titanpl.git /tmp/titanpl
+
           cd /tmp/titanpl
           npm ci
           npm link
+
           rm -rf /tmp/titanpl
 
       # ---------------- INIT PROJECT ----------------
