@@ -143,9 +143,24 @@ jobs:
         run: |
           cd demo
           titan dev &
-          sleep 12
+
+          echo "Waiting for Titan dev server..."
+
+          # Wait up to ~2 minutes
+          for i in {1..60}; do
+            if curl -s http://127.0.0.1:5100/ > /dev/null; then
+              echo "Titan dev is ready!"
+              break
+            fi
+            sleep 2
+          done
+
+          # Now hit health
           curl -f http://127.0.0.1:5100/h > ../dev.json || echo '{"ok":false,"stage":"dev"}' > ../dev.json
-          kill $(lsof -t -i:5100) || true
+
+          # Safe kill
+           PID=$(lsof -t -i:5100)
+          [ -n "$PID" ] && kill $PID || true
 
       # ---------------- BUILD ----------------
       - name: Production Build
@@ -165,7 +180,17 @@ jobs:
         continue-on-error: true
         run: |
           docker run -d -p 5100:5100 --name titanpl-run titanpl-test || true
-          sleep 10
+
+          echo "Waiting for Docker Titan..."
+
+          for i in {1..60}; do
+            if curl -s http://127.0.0.1:5100/ > /dev/null; then
+              echo "Docker Titan ready!"
+              break
+            fi
+            sleep 2
+          done
+
           curl -f http://127.0.0.1:5100/h > prod.json || echo '{"ok":false,"stage":"prod"}' > prod.json
 
       - name: Stop Container
