@@ -35,7 +35,7 @@ jobs:
 
       # ---------------- INIT PROJECT ----------------
       - name: Init TitanPl Project
-        run: tit init demo
+        run: titan init demo -t js
 
       # ---------------- HEALTH ACTION ----------------
       - name: Add Health Action
@@ -141,7 +141,7 @@ jobs:
       - name: Dev Run
         run: |
           cd demo
-          tit dev &
+          titan dev &
           sleep 12
           curl -f http://localhost:5100/h > ../dev.json
           kill $(lsof -t -i:5100) || true
@@ -150,7 +150,7 @@ jobs:
       - name: Production Build
         run: |
           cd demo
-          tit build
+          titan build
 
       # ---------------- DOCKER ----------------
       - name: Docker Build
