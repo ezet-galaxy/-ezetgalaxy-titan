@@ -107,4 +107,4 @@ RUN which node || echo "NodeJS not present ✔"
 EXPOSE 5100
 
 # ---- Force Foreground Process ----
-ENTRYPOINT ["./titan-server"]
+CMD ["./titan-server"]
