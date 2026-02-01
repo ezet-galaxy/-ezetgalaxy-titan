@@ -1,23 +1,52 @@
-
 // -- Module Definitions (for imports from "titan") --
 
-export interface RouteHandler {
-    reply(value: any): void;
-    action(name: string): void;
+export interface TitanRequest {
+    body: any;
+    method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+    path: string;
+    headers: {
+        host?: string;
+        "content-type"?: string;
+        "user-agent"?: string;
+        authorization?: string;
+        [key: string]: string | undefined;
+    };
+    params: Record<string, string>;
+    query: Record<string, string>;
 }
-
-export interface TitanBuilder {
-    get(route: string): RouteHandler;
-    post(route: string): RouteHandler;
-    log(module: string, msg: string): void;
-    start(port?: number, msg?: string, threads?: number): Promise<void>;
-}
-
-declare const builder: TitanBuilder;
-export const Titan: TitanBuilder;
-export default builder;
 
 export declare function defineAction<T>(actionFn: (req: TitanRequest) => T): (req: TitanRequest) => T;
+
+// -- Named Exports (mirrors of global `t` utilities) --
+
+export const fetch: TitanRuntimeUtils["fetch"];
+export const log: TitanRuntimeUtils["log"];
+export const read: (path: string) => string;
+
+export const jwt: TitanRuntimeUtils["jwt"];
+export const password: TitanRuntimeUtils["password"];
+
+export const db: TitanRuntimeUtils["db"];
+
+export const fs: TitanCore.FileSystem;
+export const path: TitanCore.Path;
+
+export const crypto: TitanCore.Crypto;
+export const buffer: TitanCore.BufferModule;
+
+export const ls: TitanCore.LocalStorage;
+export const localStorage: TitanCore.LocalStorage;
+export const session: TitanCore.Session;
+export const cookies: TitanCore.Cookies;
+
+export const os: TitanCore.OS;
+export const net: TitanCore.Net;
+export const proc: TitanCore.Process;
+
+export const time: TitanCore.Time;
+export const url: TitanCore.URLModule;
+export const response: TitanCore.ResponseModule;
+export const valid: any;
 
 // -- Global Definitions (Runtime Environment) --
 
@@ -39,7 +68,6 @@ export declare function defineAction<T>(actionFn: (req: TitanRequest) => T): (re
  * const resp = drift t.fetch("http://api.titan.com");
  * ```
  */
-declare var drift: <T>(promise: Promise<T> | T) => T;
 
 declare global {
     /**
@@ -47,28 +75,11 @@ declare global {
      */
     var drift: <T>(promise: Promise<T> | T) => T;
 
-    interface TitanRequest {
-        body: any;
-        method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-        path: string;
-        headers: {
-            host?: string;
-            "content-type"?: string;
-            "user-agent"?: string;
-            authorization?: string;
-            [key: string]: string | undefined;
-        };
-        params: Record<string, string>;
-        query: Record<string, string>;
-    }
+
 
     interface DbConnection {
         query(sql: string, params?: any[]): any[];
     }
-
-    function defineAction<T>(actionFn: (req: TitanRequest) => T): (req: TitanRequest) => T;
-
-    var req: TitanRequest;
 
     interface TitanRuntimeUtils {
         log(...args: any[]): void;
@@ -77,12 +88,12 @@ declare global {
             method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
             headers?: Record<string, string>;
             body?: string | object;
-        }): {
+        }): Promise<{
             ok: boolean;
             status?: number;
             body?: string;
             error?: string;
-        };
+        }>;
 
         jwt: {
             sign(payload: object, secret: string, options?: { expiresIn?: string | number }): string;
@@ -247,3 +258,5 @@ declare global {
         }
     }
 }
+
+export { };
